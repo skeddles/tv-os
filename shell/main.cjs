@@ -250,7 +250,8 @@ function hideWeb() {
 function spawnApp(cmd, args, label, appId) {
   const child = spawn(cmd, args, { detached: true, stdio: 'ignore', env: process.env })
   child.unref()
-  native = { child, label, appId }
+  const app = { child, label, appId, started: Date.now(), seen: false, starterExited: false }
+  native = app
   setFront({
     kind: 'native',
     key: `flatpak:${appId}`,
@@ -260,16 +261,36 @@ function spawnApp(cmd, args, label, appId) {
   })
   checkAppStream(appId)
   child.on('error', (e) => send({ type: 'notice', message: `Couldn't open ${label}: ${e.message}` }))
+  // `flatpak run` can exit while the app keeps running (seen with Firefox), so
+  // the app counts as running while its own processes exist (watchApps below).
   child.on('exit', () => {
-    if (native && native.child === child) {
-      native = null
-      if (typing) endTyping(null)
-      setFront({ kind: 'launcher' })
-      showLauncher()
-    }
-    send({ type: 'app-exited', label })
+    app.starterExited = true
   })
 }
+
+function appClosed(app) {
+  if (native !== app) return
+  native = null
+  if (typing) endTyping(null)
+  setFront({ kind: 'launcher' })
+  showLauncher()
+  send({ type: 'app-exited', label: app.label })
+  log(`${app.label} closed`)
+}
+
+setInterval(() => {
+  const app = native
+  if (!app || !app.appId) return
+  const running = support.flatpakPids(app.appId).length > 0
+  if (running) {
+    app.seen = true
+  } else if (app.seen) {
+    appClosed(app)
+  } else if (app.starterExited && Date.now() - app.started > 20_000) {
+    log(`${app.label} never started`)
+    appClosed(app)
+  }
+}, 1500)
 
 /** Xbox button / "home": leave the keyboard, hide a web layer, or close the native app in front. */
 function goHome() {
@@ -287,13 +308,17 @@ function goHome() {
 
 /** Bring the launcher window in front of other apps. In Cage the most recently
  *  mapped window is shown, so re-map it (hide + show). */
-function raiseLauncher() {
+async function raiseLauncher() {
   if (!win || win.isDestroyed()) return
   win.hide()
+  // Give Cage a moment to see the window go away; an instant hide+show is
+  // coalesced and the window stays behind the app (seen on the TV).
+  await new Promise((r) => setTimeout(r, 250))
   win.show()
   win.setFullScreen(true)
   win.focus()
   win.webContents.focus()
+  log('launcher raised over the app')
 }
 
 function showLauncher() {
