@@ -27,6 +27,7 @@ const flatpak = require('./lib/flatpak.cjs')
 const store = require('./lib/store.cjs')
 const { InputHelper } = require('./lib/input.cjs')
 const support = require('./lib/appsupport.cjs')
+const steamproc = require('./lib/steamproc.cjs')
 const display = require('./lib/display.cjs')
 const { startControlServer } = require('./lib/control.cjs')
 
@@ -55,6 +56,8 @@ let visibleLayer = null
 
 /** The native app currently in front, if we can close it. */
 let native = null // { child, label, appId }
+// The Steam game (or Big Picture, appId null) last opened from the launcher.
+let steamApp = null // { appId, label, started, seen }
 
 /**
  * What's in front: { kind: 'launcher' } | { kind: 'web', key, label }
@@ -280,6 +283,7 @@ function appClosed(app) {
 }
 
 setInterval(() => {
+  watchSteam()
   const app = native
   if (!app || !app.appId) return
   const running = support.flatpakPids(app.appId).length > 0
@@ -293,6 +297,75 @@ setInterval(() => {
   }
 }, 1500)
 
+// ---------- Steam ----------
+
+function startSteam(appId, label) {
+  steamApp = { appId, label, started: Date.now(), seen: false }
+  native = null
+  setFront({ kind: 'steam', key: `steam:${appId || 'bigpicture'}`, label, appId })
+}
+
+function steamRunning(s) {
+  return s.appId ? steamproc.gamePids(s.appId).length > 0 : steamproc.clientRunning()
+}
+
+function watchSteam() {
+  const s = steamApp
+  if (!s) return
+  if (steamRunning(s)) {
+    s.seen = true
+    return
+  }
+  // The first start of a Proton game can take a couple of minutes (prefix setup).
+  if (!s.seen && Date.now() - s.started < 180_000) return
+  steamApp = null
+  log(`${s.label} ${s.seen ? 'closed' : 'never started'}`)
+  send({ type: 'steam-closed', label: s.label })
+  if (front.kind === 'steam') {
+    if (typing) endTyping(null)
+    setFront({ kind: 'launcher' })
+    raiseLauncher()
+    send({ type: 'app-exited', label: s.label })
+  }
+}
+
+/** Xbox button while Steam is in front. Steam also reacts to that button (it
+ *  opens its own menu), so raise the launcher again once Steam has had its turn. */
+function homeFromSteam() {
+  const s = steamApp
+  setFront({ kind: 'launcher' })
+  raiseLauncher()
+  for (const ms of [1200, 2500]) {
+    setTimeout(() => {
+      if (front.kind === 'launcher' && !typing) raiseLauncher()
+    }, ms)
+  }
+  if (s) send({ type: 'app-running', label: s.label, quitLabel: s.appId ? 'Quit game' : 'Close Steam' })
+}
+
+/** Back to the Steam game (or Big Picture) left running behind the launcher. */
+function resumeSteam() {
+  const s = steamApp
+  if (!s || !steamRunning(s)) {
+    steamApp = null
+    return false
+  }
+  setFront({ kind: 'steam', key: `steam:${s.appId || 'bigpicture'}`, label: s.label, appId: s.appId })
+  // Cage shows the most recent window that's left, which is Steam's.
+  if (win && !win.isDestroyed()) win.hide()
+  log(`back to ${s.label}`)
+  return true
+}
+
+function quitSteam() {
+  const s = steamApp
+  if (!s) return false
+  if (s.appId) steamproc.quitGame(s.appId)
+  else spawn('steam', ['-shutdown'], { detached: true, stdio: 'ignore' }).unref()
+  log(`quitting ${s.label}`)
+  return true
+}
+
 /** Xbox button / "home": leave the keyboard, hide a web layer, or close the native app in front. */
 function goHome() {
   if (typing) {
@@ -300,6 +373,10 @@ function goHome() {
     return
   }
   if (hideWeb()) return
+  if (front.kind === 'steam') {
+    homeFromSteam()
+    return
+  }
   if (native && native.appId) {
     run('flatpak', ['kill', native.appId])
     return
@@ -473,6 +550,7 @@ async function handleControl(req) {
     appId: front.appId || null,
     mouseMode: mouseOn,
     typing: Boolean(typing),
+    steamInBackground: steamApp && front.kind !== 'steam' ? steamApp.label : null,
   })
   switch (cmd) {
     case 'status':
@@ -515,6 +593,11 @@ async function handleControl(req) {
       return r || { ok: false, error: 'launcher not ready' }
     }
     case 'close':
+      if (front.kind === 'steam') {
+        quitSteam()
+        homeFromSteam()
+        return { ok: true, note: `quitting ${steamApp ? steamApp.label : 'Steam'}` }
+      }
       if (front.kind === 'launcher') return { ok: true, note: 'nothing open; the launcher is in front' }
       goHome()
       return { ok: true }
@@ -585,12 +668,14 @@ async function launch(target, label) {
       return
     case 'steam':
       if (!/^\d+$/.test(String(target.appId))) throw new Error('bad Steam id')
-      // Handed to the Steam client running in the background; not tracked here.
+      // Handed to the Steam client; the game is tracked by its processes (watchSteam).
       // -silent keeps Steam's own window hidden if this call has to start Steam.
       spawn('steam', ['-silent', `steam://rungameid/${target.appId}`], { detached: true, stdio: 'ignore' }).unref()
+      startSteam(String(target.appId), label)
       return
     case 'steam-bigpicture':
       spawn('steam', ['steam://open/bigpicture'], { detached: true, stdio: 'ignore' }).unref()
+      startSteam(null, label)
       return
     default:
       throw new Error(`unknown launch kind ${target.kind}`)
@@ -659,6 +744,8 @@ function registerIpc() {
     return { scale }
   })
   handle('tv:resetInputPrefs', () => support.clearOverrides())
+  handle('tv:resumeApp', () => resumeSteam())
+  handle('tv:quitApp', () => quitSteam())
   handle('tv:getVolume', () => getVolume())
   handle('tv:changeVolume', (step) => changeVolume(Number(step) > 0 ? 1 : -1))
   // From web layers (webview-preload.cjs): a text field got focus.

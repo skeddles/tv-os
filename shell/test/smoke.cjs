@@ -68,4 +68,22 @@ assert.equal(outs[0].modes[0].current, true)
 assert.equal(display.pickMode(outs[0].modes).text, '1920x1080@60.000000Hz')
 assert.ok(display.SCALES.includes(display.DEFAULT_SCALE))
 
+// Steam games are found by SteamAppId in their environment
+const steamproc = require('../lib/steamproc.cjs')
+assert.equal(steamproc.envMatches('HOME=/x\0SteamAppId=204360\0SteamGameId=204360\0', '204360'), true)
+assert.equal(steamproc.envMatches('SteamAppId=2043600\0', '204360'), false)
+assert.equal(steamproc.envMatches('', '204360'), false)
+assert.deepEqual(steamproc.gamePids('0'), [])
+assert.deepEqual(steamproc.gamePids('abc'), [])
+{
+  // a real child process with the variable is found, and quitGame ends it
+  const { spawnSync, spawn: sp } = require('node:child_process')
+  const child = sp('sleep', ['30'], { env: { ...process.env, SteamAppId: '999999001' } })
+  spawnSync('sleep', ['0.2'])
+  assert.deepEqual(steamproc.gamePids('999999001'), [child.pid])
+  steamproc.quitGame('999999001', 100)
+  spawnSync('sleep', ['0.3'])
+  assert.deepEqual(steamproc.gamePids('999999001').filter((p) => p === child.pid && !child.killed && child.exitCode === null && child.signalCode === null), [])
+}
+
 console.log('smoke tests passed')
