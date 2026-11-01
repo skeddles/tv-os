@@ -15,9 +15,10 @@ function mb(num, unit) {
 
 /** Feed one line of `rpm-ostree upgrade` output into a progress record { totalMB, doneMB, staging }. */
 function parseLine(line, p) {
-  const need = line.match(/layers needed: \d+ \(([\d.]+) (kB|KB|MB|GB)\)/)
+  // rpm-ostree puts a no-break space (U+00A0) before the unit; \s matches it.
+  const need = line.match(/layers needed: \d+ \(([\d.]+)\s*(kB|KB|MB|GB)\)/)
   if (need) p.totalMB += mb(need[1], need[2])
-  const got = line.match(/Fetching (?:ostree chunk|layer) \S+ \(([\d.]+) (kB|KB|MB|GB)\)\.\.\.done/)
+  const got = line.match(/Fetching (?:ostree chunk|layer) \S+ \(([\d.]+)\s*(kB|KB|MB|GB)\)\.\.\.done/)
   if (got) p.doneMB += mb(got[1], got[2])
   if (/Staging deployment/.test(line)) p.staging = true
   return p
@@ -105,6 +106,8 @@ class OsUpdate {
     const c = spawn('rpm-ostree', ['upgrade', '--check', '--unchanged-exit-77'], { stdio: ['ignore', 'pipe', 'pipe'] })
     this.child = c
     let out = ''
+    c.stdout.setEncoding('utf8')
+    c.stderr.setEncoding('utf8')
     c.stdout.on('data', (d) => (out += d))
     c.stderr.on('data', (d) => (out += d))
     c.on('error', (e) => (out += e.message))
@@ -129,6 +132,8 @@ class OsUpdate {
     this.child = c
     let tail = ''
     let partial = ''
+    c.stdout.setEncoding('utf8')
+    c.stderr.setEncoding('utf8')
     const feed = (d) => {
       const text = partial + d
       const lines = text.split(/[\r\n]/)
