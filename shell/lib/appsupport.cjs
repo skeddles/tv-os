@@ -129,15 +129,17 @@ function flatpakPids(appId) {
   return pids
 }
 
-/** From [{ pid, ppid, comm }], the app's own top processes: not bwrap (Flatpak's
- *  sandbox wrapper), with a parent that is bwrap or outside the app. */
-function pickMains(procs) {
-  const byPid = new Map(procs.map((p) => [p.pid, p]))
-  return procs.filter((p) => {
-    if (p.comm === 'bwrap') return false
-    const parent = byPid.get(p.ppid)
-    return !parent || parent.comm === 'bwrap'
-  })
+// Helper processes of browsers and Electron apps; the main process has none of these.
+const HELPER_ARG = /(^|\s)(--type=|-contentproc\b)|zypak-helper/
+
+/** From [{ pid, comm, cmdline, start }], the app's main process: not Flatpak's
+ *  bwrap wrapper, not a browser helper process, and the oldest of the rest.
+ *  (Chrome's helpers live in a second Flatpak sandbox, so "child of bwrap"
+ *  isn't enough: that picked the network process too, which saves cookies.) */
+function pickMain(procs) {
+  const candidates = procs.filter((p) => p.comm !== 'bwrap' && !HELPER_ARG.test(p.cmdline))
+  candidates.sort((x, y) => x.start - y.start || x.pid - y.pid)
+  return candidates[0] || null
 }
 
 function procInfo(pid) {
@@ -145,15 +147,22 @@ function procInfo(pid) {
     const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
     // "pid (comm) state ppid ..." - comm may contain spaces, so split at the last ')'
     const close = stat.lastIndexOf(')')
-    return { pid: Number(pid), comm: stat.slice(stat.indexOf('(') + 1, close), ppid: Number(stat.slice(close + 2).split(' ')[1]) }
+    const fields = stat.slice(close + 2).split(' ')
+    return {
+      pid: Number(pid),
+      comm: stat.slice(stat.indexOf('(') + 1, close),
+      cmdline: fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' '),
+      start: Number(fields[19]), // starttime, field 22 of /proc/pid/stat
+    }
   } catch {
     return null
   }
 }
 
-/** PIDs of the app's main process(es), for asking it to quit (SIGTERM). */
-function flatpakMainPids(appId) {
-  return pickMains(flatpakPids(appId).map(procInfo).filter(Boolean)).map((p) => p.pid)
+/** PID of the app's main process (to ask it to quit with SIGTERM), or null. */
+function flatpakMainPid(appId) {
+  const main = pickMain(flatpakPids(appId).map(procInfo).filter(Boolean))
+  return main ? main.pid : null
 }
 
 /** True if any process of the app has a controller device open. */
@@ -180,8 +189,8 @@ function appUsesController(appId) {
 }
 
 module.exports = {
-  pickMains,
-  flatpakMainPids,
+  pickMain,
+  flatpakMainPid,
   override,
   setOverride,
   clearOverrides,

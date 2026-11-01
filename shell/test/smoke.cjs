@@ -119,18 +119,24 @@ const osu = require('../lib/osupdate.cjs')
   assert.equal(osu.summarizeStatus(JSON.stringify({ transaction: ['upgrade', 'uupd', '/x'], deployments: [] })).busy, true)
 }
 
-// The main process of a Flatpak app, below Flatpak's bwrap wrappers
+// The main process of a Flatpak app (process list as seen on the TV with Chrome)
 {
-  const { pickMains } = require('../lib/appsupport.cjs')
-  const procs = [
-    { pid: 4756, ppid: 1500, comm: 'bwrap' },
-    { pid: 4766, ppid: 4756, comm: 'bwrap' },
-    { pid: 4767, ppid: 4766, comm: 'chrome' },
-    { pid: 4770, ppid: 4767, comm: 'chrome' },
-    { pid: 4790, ppid: 4767, comm: 'zypak-sandbox' },
+  const { pickMain } = require('../lib/appsupport.cjs')
+  const chrome = [
+    { pid: 11584, comm: 'bwrap', cmdline: '/usr/bin/bwrap --args 160 -- chrome --kiosk', start: 100 },
+    { pid: 11594, comm: 'bwrap', cmdline: '/usr/bin/bwrap --args 160 -- chrome --kiosk', start: 101 },
+    { pid: 11595, comm: 'chrome', cmdline: '/app/extra/chrome --kiosk --start-fullscreen https://www.netflix.com/browse', start: 102 },
+    { pid: 11639, comm: 'bwrap', cmdline: '/usr/bin/bwrap --args 73 -- /app/bin/zypak-helper child - /app/extra/chrome --type=zygote', start: 103 },
+    { pid: 11650, comm: 'chrome', cmdline: '/app/extra/chrome --type=utility --utility-sub-type=network.mojom.NetworkService', start: 104 },
+    { pid: 11660, comm: 'chrome', cmdline: '/app/extra/chrome --type=renderer', start: 105 },
   ]
-  assert.deepEqual(pickMains(procs).map((p) => p.pid), [4767])
-  assert.deepEqual(pickMains([{ pid: 10, ppid: 1, comm: 'firefox' }, { pid: 11, ppid: 10, comm: 'firefox' }]).map((p) => p.pid), [10])
+  assert.equal(pickMain(chrome).pid, 11595)
+  const firefox = [
+    { pid: 20, comm: 'firefox', cmdline: '/app/lib/firefox/firefox -contentproc -childID 1', start: 60 },
+    { pid: 10, comm: 'firefox', cmdline: '/app/lib/firefox/firefox --name org.mozilla.firefox', start: 50 },
+  ]
+  assert.equal(pickMain(firefox).pid, 10)
+  assert.equal(pickMain([{ pid: 1, comm: 'bwrap', cmdline: 'bwrap', start: 1 }]), null)
 }
 
 console.log('smoke tests passed')

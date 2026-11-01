@@ -373,19 +373,19 @@ function quitSteam() {
  *  process), so it can save: Chrome writes sign-in cookies on the way out, and
  *  `flatpak kill` (SIGKILL) lost a Netflix sign-in. Force it after 5 s. */
 function closeApp(appId) {
-  const mains = support.flatpakMainPids(appId)
-  for (const pid of mains) {
+  const main = support.flatpakMainPid(appId)
+  if (main) {
     try {
-      process.kill(pid, 'SIGTERM')
+      process.kill(main, 'SIGTERM')
     } catch {
       /* already gone */
     }
   }
-  log(`closing ${appId} (${mains.length ? `asked pid ${mains.join(', ')} to quit` : 'no main process found'})`)
+  log(`closing ${appId} (${main ? `asked pid ${main} to quit` : 'no main process found'})`)
   const started = Date.now()
   const t = setInterval(() => {
     if (support.flatpakPids(appId).length === 0) return clearInterval(t)
-    if (Date.now() - started > 5000 || mains.length === 0) {
+    if (Date.now() - started > 5000 || !main) {
       clearInterval(t)
       log(`${appId} didn't quit in time; stopping it`)
       run('flatpak', ['kill', appId])
