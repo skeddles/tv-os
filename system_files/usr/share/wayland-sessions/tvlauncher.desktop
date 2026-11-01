@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=TV Launcher
+Comment=Full-screen controller launcher (Cage kiosk)
+Exec=/usr/bin/tvlauncher-session
+Type=Application
+DesktopNames=tvlauncher

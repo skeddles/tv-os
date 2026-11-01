@@ -1,0 +1,10 @@
+[Unit]
+Description=TV launcher: keep the UI up to date from GitHub
+
+[Service]
+ExecStart=/usr/bin/tvlauncher-ui-update
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,22 @@
+#!/usr/bin/bash
+# Runs the Electron shell and restarts it if it exits or crashes, so restarting
+# the launcher never ends the Cage session. Logs: journalctl --user -t tvlauncher-shell
+ELECTRON=/usr/lib/tvlauncher/electron/electron
+APP=/usr/lib/tvlauncher/app
+
+# For testing a shell checked out somewhere else: TVLAUNCHER_SHELL_APP=~/tv-os/shell
+APP="${TVLAUNCHER_SHELL_APP:-$APP}"
+
+failures=0
+while true; do
+    started=$(date +%s)
+    "$ELECTRON" "$APP" --ozone-platform=wayland --enable-features=UseOzonePlatform 2>&1 \
+        | systemd-cat -t tvlauncher-shell
+    # Back off if it keeps crashing right away.
+    if [ $(( $(date +%s) - started )) -lt 10 ]; then
+        failures=$((failures + 1))
+    else
+        failures=0
+    fi
+    sleep $(( failures > 5 ? 10 : 1 ))
+done

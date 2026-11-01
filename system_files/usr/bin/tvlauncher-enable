@@ -1,0 +1,40 @@
+#!/usr/bin/bash
+# Makes the PC boot straight into the TV launcher for the user who runs this.
+#   sudo tvlauncher-enable      turn on   (run once, from your normal account)
+#   sudo tvlauncher-disable     back to the normal KDE desktop at boot
+# Bazzite's login screen is KDE's Plasma Login Manager (an SDDM fork); this
+# writes its auto-login drop-in file.
+set -euo pipefail
+
+CONF_DIR=/etc/plasmalogin.conf.d
+CONF="$CONF_DIR/zz-tvlauncher.conf"
+
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
+case "$(basename "$0")" in
+    tvlauncher-disable)
+        rm -f "$CONF"
+        echo "Auto-login to the TV launcher is off. After a restart you'll get the normal login screen."
+        exit 0
+        ;;
+esac
+
+user="${1:-${SUDO_USER:-}}"
+if [ -z "$user" ] || [ "$user" = root ] || ! id "$user" >/dev/null 2>&1; then
+    echo "Run this from your own account: sudo tvlauncher-enable" >&2
+    exit 1
+fi
+
+mkdir -p "$CONF_DIR"
+cat > "$CONF" <<EOF
+# Written by tvlauncher-enable. Remove with: sudo tvlauncher-disable
+[Autologin]
+User=$user
+Session=tvlauncher.desktop
+# Log back in if the session ever ends (also works around KDE bug 522006).
+Relogin=true
+EOF
+echo "Done. $user will be logged straight into the TV launcher at boot."
+echo "Restart now with: systemctl reboot"

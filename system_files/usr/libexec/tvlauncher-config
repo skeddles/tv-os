@@ -1,0 +1,9 @@
+# Sourced by the tvlauncher-* scripts: loads defaults, then PC and user overrides.
+# shellcheck shell=bash
+for f in /usr/share/tvlauncher/config /etc/tvlauncher/config "${XDG_CONFIG_HOME:-$HOME/.config}/tvlauncher/config"; do
+    # shellcheck disable=SC1090
+    [ -r "$f" ] && . "$f"
+done
+TVLAUNCHER_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/tvlauncher"
+TVLAUNCHER_UI_DIR="$TVLAUNCHER_DATA/ui"
+TVLAUNCHER_UI_GOOD="$TVLAUNCHER_DATA/ui-last-good"

@@ -1,0 +1,17 @@
+#!/usr/bin/bash
+# The "TV Launcher" login session: Cage running the launcher shell full screen.
+# -s lets Ctrl+Alt+F<n> switch to a text console for repairs.
+. /usr/libexec/tvlauncher-config
+
+export XDG_CURRENT_DESKTOP=tvlauncher
+export XDG_SESSION_DESKTOP=tvlauncher
+
+# Let user services (the UI updater and dev server) see this session.
+systemctl --user import-environment XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null || true
+systemctl --user start tvlauncher-ui-update.service tvlauncher-ui-dev.service 2>/dev/null || true
+
+if [ "${TVLAUNCHER_START_STEAM:-0}" = "1" ] && command -v steam >/dev/null; then
+    (sleep 10; steam -silent >/dev/null 2>&1) &
+fi
+
+exec cage -s -- /usr/bin/tvlauncher-shell

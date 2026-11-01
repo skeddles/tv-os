@@ -1,0 +1,13 @@
+# TV launcher defaults. To change one, copy the line into
+# ~/.config/tvlauncher/config (yours) or /etc/tvlauncher/config (whole PC).
+
+# Where the launcher UI comes from, and which branch the TV follows.
+TVLAUNCHER_UI_REPO=https://github.com/skeddles/tv-launcher-ui.git
+TVLAUNCHER_UI_BRANCH=tv
+
+# Seconds between checks for UI updates.
+TVLAUNCHER_UI_POLL=5
+
+# Start Steam in the background at login (1) or only when a Steam game is opened (0).
+# Off by default: Steam windows (updates, sign-in) could cover the launcher in Cage.
+TVLAUNCHER_START_STEAM=0

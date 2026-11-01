@@ -1,0 +1,82 @@
+#!/usr/bin/bash
+# Keeps the launcher UI up to date (Layer 4 in the plan).
+# Clones the UI repo, then checks the `tv` branch every few seconds. When it
+# moves, the files are updated in place and the running Vite dev server
+# hot-swaps them on the TV. A copy of the last good build is kept for the
+# shell to fall back on.
+set -uo pipefail
+. /usr/libexec/tvlauncher-config
+
+REPO="$TVLAUNCHER_UI_REPO"
+BRANCH="$TVLAUNCHER_UI_BRANCH"
+DIR="$TVLAUNCHER_UI_DIR"
+GOOD="$TVLAUNCHER_UI_GOOD"
+POLL="${TVLAUNCHER_UI_POLL:-5}"
+
+log() { echo "[ui-update] $*"; }
+
+lock_hash() { sha256sum "$DIR/package-lock.json" 2>/dev/null | cut -d' ' -f1; }
+
+install_deps() {
+    log "installing UI dependencies"
+    (cd "$DIR" && npm ci --no-audit --no-fund --loglevel=error)
+}
+
+# Build in the background at low priority and swap it in only if it succeeds.
+build_last_good() {
+    local tmp="$TVLAUNCHER_DATA/.build-tmp"
+    rm -rf "$tmp"
+    if (cd "$DIR" && nice -n 15 npx vite build --outDir "$tmp" --emptyOutDir --logLevel error); then
+        rm -rf "$GOOD.old"
+        [ -d "$GOOD" ] && mv "$GOOD" "$GOOD.old"
+        mv "$tmp" "$GOOD" && rm -rf "$GOOD.old"
+        log "saved backup build $(git -C "$DIR" rev-parse --short HEAD)"
+    else
+        log "backup build failed; keeping the previous one"
+        rm -rf "$tmp"
+    fi
+}
+
+mkdir -p "$TVLAUNCHER_DATA"
+
+# First run: clone and install.
+until [ -d "$DIR/.git" ]; do
+    log "downloading $REPO ($BRANCH)"
+    if git clone --quiet --branch "$BRANCH" --single-branch "$REPO" "$DIR" 2>/dev/null \
+        || git clone --quiet --single-branch "$REPO" "$DIR"; then
+        install_deps && systemctl --user restart tvlauncher-ui-dev.service
+        build_last_good &
+    else
+        rm -rf "$DIR"
+        log "download failed (no internet yet?); retrying in 15s"
+        sleep 15
+    fi
+done
+
+# If the clone fell back to main because `tv` didn't exist yet, switch when it appears.
+current_branch=$(git -C "$DIR" rev-parse --abbrev-ref HEAD)
+
+while true; do
+    if [ "$current_branch" != "$BRANCH" ] && git -C "$DIR" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+        git -C "$DIR" fetch --quiet origin "$BRANCH:refs/remotes/origin/$BRANCH" \
+            && git -C "$DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH" \
+            && current_branch="$BRANCH"
+    fi
+
+    if git -C "$DIR" fetch --quiet origin "$current_branch" 2>/dev/null; then
+        local_rev=$(git -C "$DIR" rev-parse HEAD)
+        remote_rev=$(git -C "$DIR" rev-parse FETCH_HEAD)
+        if [ "$local_rev" != "$remote_rev" ]; then
+            before=$(lock_hash)
+            # Files change in place; Vite's watcher hot-swaps them.
+            git -C "$DIR" reset --quiet --hard "$remote_rev"
+            git -C "$DIR" clean --quiet -fd
+            log "updated to $(git -C "$DIR" log -1 --format='%h %s')"
+            if [ "$before" != "$(lock_hash)" ]; then
+                install_deps && systemctl --user restart tvlauncher-ui-dev.service
+            fi
+            build_last_good &
+        fi
+    fi
+    sleep "$POLL"
+done

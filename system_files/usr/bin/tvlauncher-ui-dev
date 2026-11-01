@@ -1,0 +1,10 @@
+#!/usr/bin/bash
+# Runs the launcher UI's Vite dev server on http://localhost:5173 (localhost only).
+. /usr/libexec/tvlauncher-config
+DIR="$TVLAUNCHER_UI_DIR"
+
+# Wait for tvlauncher-ui-update to download the UI and its dependencies.
+until [ -x "$DIR/node_modules/.bin/vite" ]; do sleep 3; done
+
+cd "$DIR" || exit 1
+exec ./node_modules/.bin/vite --host localhost --port 5173 --strictPort --clearScreen false
