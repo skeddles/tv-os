@@ -27,6 +27,13 @@ Cage runs `tvlauncher-shell`, which restarts the Electron shell if it ever exits
 → the shell shows `http://localhost:5173` (the live UI), or the last good
 build if the dev server isn't up yet.
 
+## Claude connector
+
+[`connector/`](connector/README.md) lets Claude control the TV from any Claude
+chat: run commands, start long downloads, read and write files, check update
+status. It installs into your home folder with one small script, so it works
+before you switch to this image.
+
 ## Installing on the TV PC
 
 You need: Bazzite already installed (Phase 1), a keyboard for these few

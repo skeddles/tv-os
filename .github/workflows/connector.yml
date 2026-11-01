@@ -1,0 +1,22 @@
+name: Connector tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['connector/**', '.github/workflows/connector.yml']
+  pull_request:
+    paths: ['connector/**', '.github/workflows/connector.yml']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Unit and end-to-end tests
+        run: python3 connector/test_connector.py
+      - name: Shellcheck installer
+        run: shellcheck connector/install.sh

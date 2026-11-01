@@ -11,6 +11,8 @@ on:
       - main
     paths-ignore:
       - '**/README.md'
+      - 'connector/**'
+      - '.github/workflows/connector.yml'
   workflow_dispatch:
 
 env:
