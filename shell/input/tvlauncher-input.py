@@ -360,7 +360,11 @@ class Helper:
         """
         if not self.vi:
             return
-        time.sleep(0.3)  # let the compositor pick up the new device first
+        # The compositor needs a moment to pick up a new device; a tap sent
+        # sooner is lost (0.3 s was too short on the TV). Tap twice to be safe.
+        time.sleep(1.0)
+        self.vi.tap("leftshift")
+        time.sleep(0.3)
         self.vi.tap("leftshift")
 
     # -- devices --
