@@ -1,20 +1,22 @@
-// Runs inside web apps opened as layers (e.g. Twitch). Watches the controller
-// for "go home": the Xbox button, or View + Menu held together.
-// The main process also watches the Xbox button directly (lib/evdev.cjs);
-// this is the fallback when the controller's device file isn't readable.
+// Runs inside web apps opened as layers. Tells the shell when a text field gets
+// focus, so the on-screen keyboard can open when you click one.
 const { ipcRenderer } = require('electron')
 
-let wasDown = false
-function poll() {
-  const pads = navigator.getGamepads ? navigator.getGamepads() : []
-  let down = false
-  for (const p of pads) {
-    if (!p) continue
-    const b = (i) => Boolean(p.buttons[i] && p.buttons[i].pressed)
-    if (b(16) || (b(8) && b(9))) down = true
-  }
-  if (down && !wasDown) ipcRenderer.send('tv:home')
-  wasDown = down
-  requestAnimationFrame(poll)
+function isTextField(el) {
+  if (!el) return false
+  if (el.isContentEditable) return true
+  if (el.tagName === 'TEXTAREA') return true
+  if (el.tagName !== 'INPUT') return false
+  const t = (el.type || 'text').toLowerCase()
+  return ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(t)
 }
-window.addEventListener('DOMContentLoaded', () => requestAnimationFrame(poll))
+
+window.addEventListener(
+  'focusin',
+  (e) => {
+    if (isTextField(e.target)) {
+      ipcRenderer.send('tv:text-focus', { role: e.target.tagName.toLowerCase(), password: e.target.type === 'password' })
+    }
+  },
+  true,
+)

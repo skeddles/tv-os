@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('tv', {
   storeUninstall: (appId) => ipcRenderer.invoke('tv:storeUninstall', appId),
   systemInfo: () => ipcRenderer.invoke('tv:systemInfo'),
   power: (action) => ipcRenderer.invoke('tv:power', action),
+  typeText: (text, enter) => ipcRenderer.invoke('tv:typeText', text, enter),
+  cancelTyping: () => ipcRenderer.invoke('tv:cancelTyping'),
+  getDisplay: () => ipcRenderer.invoke('tv:getDisplay'),
+  setDisplay: (opts) => ipcRenderer.invoke('tv:setDisplay', opts),
+  resetInputPrefs: () => ipcRenderer.invoke('tv:resetInputPrefs'),
   onEvent: (cb) => {
     const listener = (_e, event) => cb(event)
     ipcRenderer.on('tv:event', listener)

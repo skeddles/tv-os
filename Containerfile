@@ -3,7 +3,7 @@
 
 # ---- Stage 1: build the Electron shell and a backup copy of the UI ----
 FROM quay.io/fedora/fedora:44 AS shell-build
-RUN dnf -y install nodejs npm git && dnf clean all
+RUN dnf -y install nodejs npm git python3 && dnf clean all
 
 # Electron app (downloads the matching Electron binary for Linux x64)
 COPY shell /src/shell
@@ -14,7 +14,8 @@ RUN cd /src/shell \
     && npm run check \
     && mkdir -p /out/app \
     && cp -a node_modules/electron/dist /out/electron \
-    && cp -a package.json main.cjs preload.cjs webview-preload.cjs lib /out/app/
+    && cp -a package.json main.cjs preload.cjs webview-preload.cjs lib input /out/app/ \
+    && rm -f /out/app/input/test_input.py
 
 # Backup copy of the UI, shown if the live dev server on the TV isn't running.
 # Uses the `tv` branch (commits that passed CI), or main if that doesn't exist yet.

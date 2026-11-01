@@ -1,12 +1,12 @@
 {
   "name": "tvlauncher-shell",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Full-screen Electron shell for the TV launcher: hosts the UI and does the system jobs a web page can't.",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check webview-preload.cjs && node --check lib/system.cjs && node --check lib/steam.cjs && node --check lib/flatpak.cjs && node --check lib/store.cjs && node --check lib/evdev.cjs && node test/smoke.cjs"
+    "check": "node --check main.cjs && node --check preload.cjs && node --check webview-preload.cjs && python3 -m py_compile input/tvlauncher-a11y.py && for f in lib/*.cjs; do node --check $f || exit 1; done && node test/smoke.cjs && python3 input/test_input.py"
   },
   "devDependencies": {
     "electron": "44.10.0"
