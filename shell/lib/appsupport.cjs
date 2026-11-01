@@ -129,6 +129,8 @@ function flatpakPids(appId) {
   return pids
 }
 
+// Flatpak's own processes inside an app's group.
+const FLATPAK_HELPERS = new Set(['bwrap', 'xdg-dbus-proxy', 'flatpak-spawn'])
 // Helper processes of browsers and Electron apps; the main process has none of these.
 const HELPER_ARG = /(^|\s)(--type=|-contentproc\b)|zypak-helper/
 
@@ -137,7 +139,7 @@ const HELPER_ARG = /(^|\s)(--type=|-contentproc\b)|zypak-helper/
  *  (Chrome's helpers live in a second Flatpak sandbox, so "child of bwrap"
  *  isn't enough: that picked the network process too, which saves cookies.) */
 function pickMain(procs) {
-  const candidates = procs.filter((p) => p.comm !== 'bwrap' && !HELPER_ARG.test(p.cmdline))
+  const candidates = procs.filter((p) => !FLATPAK_HELPERS.has(p.comm) && !HELPER_ARG.test(p.cmdline))
   candidates.sort((x, y) => x.start - y.start || x.pid - y.pid)
   return candidates[0] || null
 }

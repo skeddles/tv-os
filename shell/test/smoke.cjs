@@ -124,6 +124,7 @@ const osu = require('../lib/osupdate.cjs')
   const { pickMain } = require('../lib/appsupport.cjs')
   const chrome = [
     { pid: 11584, comm: 'bwrap', cmdline: '/usr/bin/bwrap --args 160 -- chrome --kiosk', start: 100 },
+    { pid: 11591, comm: 'xdg-dbus-proxy', cmdline: '/usr/bin/xdg-dbus-proxy --args=162', start: 100 },
     { pid: 11594, comm: 'bwrap', cmdline: '/usr/bin/bwrap --args 160 -- chrome --kiosk', start: 101 },
     { pid: 11595, comm: 'chrome', cmdline: '/app/extra/chrome --kiosk --start-fullscreen https://www.netflix.com/browse', start: 102 },
     { pid: 11639, comm: 'bwrap', cmdline: '/usr/bin/bwrap --args 73 -- /app/bin/zypak-helper child - /app/extra/chrome --type=zygote', start: 103 },
