@@ -16,8 +16,12 @@ while true; do
     APP="${TVLAUNCHER_SHELL_APP:-/usr/lib/tvlauncher/app}"
 
     started=$(date +%s)
-    "$ELECTRON" "$APP" --ozone-platform=wayland --enable-features=UseOzonePlatform 2>&1 \
-        | systemd-cat -t tvlauncher-shell
+    # systemd-cat runs Electron itself (no pipe), so leftover GPU/utility
+    # processes of a killed Electron can't keep the loop waiting.
+    systemd-cat -t tvlauncher-shell \
+        "$ELECTRON" "$APP" --ozone-platform=wayland --enable-features=UseOzonePlatform
+    # Clean up any of those leftovers before starting again.
+    pkill -9 -u "$(id -u)" -f "^$ELECTRON " 2>/dev/null || true
     # Back off if it keeps crashing right away.
     if [ $(( $(date +%s) - started )) -lt 10 ]; then
         failures=$((failures + 1))

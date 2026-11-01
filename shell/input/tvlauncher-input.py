@@ -347,7 +347,21 @@ class Helper:
         except OSError as e:
             log(f"no absolute pointer ({e}); pointer won't be centred")
             self.abs = None
+        self.wake_keyboard()
         emit({"ev": "ready", "uinput": self.vi is not None})
+
+    def wake_keyboard(self) -> None:
+        """Tap Shift once so Cage has a live keyboard to hand to windows.
+
+        When the previous shell's virtual keyboard vanished (the shell was
+        killed or crashed), Cage 0.3.1 can be left pointing at it and sends new
+        windows keyboard modifiers without a keymap, which crashes Electron
+        (xkb_state_update_mask). A key event from a live keyboard resets it.
+        """
+        if not self.vi:
+            return
+        time.sleep(0.3)  # let the compositor pick up the new device first
+        self.vi.tap("leftshift")
 
     # -- devices --
     def rescan(self) -> None:
