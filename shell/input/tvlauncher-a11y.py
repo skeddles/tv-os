@@ -11,13 +11,15 @@ stdout: {"ev": "text-focus", "app": "Firefox", "role": "entry", "password": fals
         {"ev": "ready"}
 """
 
+import ctypes
 import json
+import signal
 import sys
 
 import gi
 
 gi.require_version("Atspi", "2.0")
-from gi.repository import Atspi  # noqa: E402
+from gi.repository import Atspi, GLib  # noqa: E402
 
 TEXT_ROLES = {
     "entry",
@@ -70,7 +72,24 @@ def on_focus(ev):
         pass
 
 
+def exit_with_parent():
+    """Exit when the shell goes away, so a leftover helper can't keep the session open."""
+    try:  # Linux: get SIGTERM when the parent dies
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except OSError:
+        pass
+
+    def on_stdin(_fd, cond):
+        if cond & (GLib.IOCondition.HUP | GLib.IOCondition.ERR) or not sys.stdin.buffer.read1(4096):
+            Atspi.event_quit()
+            return False
+        return True
+
+    GLib.io_add_watch(sys.stdin.fileno(), GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR, on_stdin)
+
+
 def main():
+    exit_with_parent()
     enable_accessibility()
     listener = Atspi.EventListener.new(on_focus)
     listener.register("object:state-changed:focused")

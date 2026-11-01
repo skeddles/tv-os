@@ -533,6 +533,13 @@ class Helper:
 
 
 def main() -> None:
+    try:  # also exit if the shell is killed outright (Linux PR_SET_PDEATHSIG)
+        import ctypes
+        import signal
+
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)
+    except OSError:
+        pass
     helper = Helper()
     try:
         helper.run()
