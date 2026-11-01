@@ -771,6 +771,19 @@ if (!app.requestSingleInstanceLock()) {
     fs.mkdirSync(paths.data, { recursive: true })
     registerProtocol()
     registerIpc()
+    // Start the controller helper before the window: its first act is a Shift
+    // tap from a live virtual keyboard (wake_keyboard). If the previous shell's
+    // keyboard device vanished (crash, kill), Cage otherwise gives the new window
+    // keyboard modifiers without a keymap and Electron crashes (xkb_state_update_mask).
+    input.on('controller', (m) => log(`controller ${m.connected ? `connected: ${m.name}` : 'disconnected'}`))
+    input.start()
+    await new Promise((resolve) => {
+      const t = setTimeout(resolve, 3000)
+      input.once('ready', () => {
+        clearTimeout(t)
+        setTimeout(resolve, 200) // let Cage pass the keymap on
+      })
+    })
     createWindow()
     // On boot the dev server may still be starting; give it a moment, then
     // show the backup copy and switch over when it's ready.
@@ -786,8 +799,6 @@ if (!app.requestSingleInstanceLock()) {
       if (front.kind === 'native') onTextFocus(m)
     })
     a11y.start()
-    input.on('controller', (m) => log(`controller ${m.connected ? `connected: ${m.name}` : 'disconnected'}`))
-    input.start()
     startControlServer(handleControl, log)
     if (await waitForDevServer(8000)) await loadUi()
     else await loadFallback()
