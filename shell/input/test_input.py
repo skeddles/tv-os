@@ -61,7 +61,16 @@ def make_helper():
     h.notch_acc = [0.0, 0.0]
     h.held = set()
     h.vi = FakeVI()
+    h.abs = FakeAbs()
     return h
+
+
+class FakeAbs:
+    def __init__(self):
+        self.moves = []
+
+    def move(self, fx, fy):
+        self.moves.append((fx, fy))
 
 
 class InputTest(unittest.TestCase):
@@ -84,6 +93,8 @@ class InputTest(unittest.TestCase):
         self.assertEqual(tvi.UI_DEV_CREATE, 0x5501)
         self.assertEqual(tvi.UI_DEV_DESTROY, 0x5502)
         self.assertEqual(tvi.eviocgabs(0), 0x80184540)
+        self.assertEqual(tvi.UI_SET_ABSBIT, 0x40045567)
+        self.assertEqual(tvi.UI_ABS_SETUP, 0x401C5504)
         self.assertEqual(tvi.EVENT.size, 24)
 
     def test_every_printable_ascii_char_is_typeable(self):
@@ -148,7 +159,7 @@ class InputTest(unittest.TestCase):
                 ("tap", "up", False, False),
             ],
         )
-        self.assertEqual(self.events(), ["keyboard"])
+        self.assertEqual(self.events(), ["click", "keyboard"])
 
     def test_turning_mouse_off_releases_held_buttons_and_parks(self):
         h = make_helper()
@@ -156,7 +167,7 @@ class InputTest(unittest.TestCase):
         h.on_button(tvi.BTN_A, True)  # dragging
         h.set_mouse(False)
         self.assertIn(("button", tvi.BTN_LEFT, False), h.vi.log)
-        self.assertEqual(h.vi.log[-1], ("park",))
+        self.assertEqual(h.abs.moves, [(0.5, 0.5), (1.0, 1.0)])  # centred on, parked off
 
     def test_stick_moves_pointer_and_trigger_slows_it(self):
         h = make_helper()

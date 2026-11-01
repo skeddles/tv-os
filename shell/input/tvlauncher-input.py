@@ -12,6 +12,8 @@ Talks to the Electron shell with JSON lines:
                      {"cmd": "key", "key": "enter"}
                      {"cmd": "park"}            move the pointer out of the way
   stdout (events):   {"ev": "ready", "uinput": true}
+                     {"ev": "click"}            A pressed in mouse mode (lets the shell
+                                                open the keyboard on text fields)
                      {"ev": "home"}             Xbox button, short press
                      {"ev": "toggle-mouse"}     Xbox button held ~0.7 s
                      {"ev": "keyboard"}         Y, while in mouse mode
@@ -93,6 +95,8 @@ def _ioc(direction: int, type_: str, nr: int, size: int) -> int:
 UI_SET_EVBIT = _ioc(1, "U", 100, 4)
 UI_SET_KEYBIT = _ioc(1, "U", 101, 4)
 UI_SET_RELBIT = _ioc(1, "U", 102, 4)
+UI_SET_ABSBIT = _ioc(1, "U", 103, 4)
+UI_ABS_SETUP = _ioc(1, "U", 4, 28)
 UI_DEV_SETUP = _ioc(1, "U", 3, 92)
 UI_DEV_CREATE = _ioc(0, "U", 1, 0)
 UI_DEV_DESTROY = _ioc(0, "U", 2, 0)
@@ -214,6 +218,43 @@ class VirtualInput:
             os.close(self.fd)
 
 
+class AbsolutePointer:
+    """A second virtual device that can put the pointer at an exact spot.
+
+    Relative moves go through pointer acceleration, so they can't place the
+    pointer reliably. An absolute device (like a VM's USB tablet) can: used to
+    centre the pointer when mouse mode turns on and park it when it turns off.
+    """
+
+    MAX = 65535
+
+    def __init__(self) -> None:
+        self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_ABS)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_SYN)
+        fcntl.ioctl(self.fd, UI_SET_KEYBIT, BTN_LEFT)  # makes it a mouse, not a joystick/tablet
+        for code in (ABS_X, ABS_Y):
+            fcntl.ioctl(self.fd, UI_SET_ABSBIT, code)
+            # struct uinput_abs_setup { u16 code; u16 pad; struct input_absinfo { s32 value, min, max, fuzz, flat, res } }
+            fcntl.ioctl(self.fd, UI_ABS_SETUP, struct.pack("HH6i", code, 0, 0, 0, self.MAX, 0, 0, 0))
+        setup = struct.pack("HHHH80sI", 0x06, 0x1209, 0x7477, 1, b"TV launcher pointer position", 0)
+        fcntl.ioctl(self.fd, UI_DEV_SETUP, setup)
+        fcntl.ioctl(self.fd, UI_DEV_CREATE)
+
+    def move(self, fx: float, fy: float) -> None:
+        """Put the pointer at a fraction of the screen (0..1, 0..1)."""
+        for code, f in ((ABS_X, fx), (ABS_Y, fy)):
+            os.write(self.fd, EVENT.pack(0, 0, EV_ABS, code, int(max(0.0, min(1.0, f)) * self.MAX)))
+        os.write(self.fd, EVENT.pack(0, 0, EV_SYN, SYN_REPORT, 0))
+
+    def close(self) -> None:
+        try:
+            fcntl.ioctl(self.fd, UI_DEV_DESTROY)
+        finally:
+            os.close(self.fd)
+
+
 # ---- controllers ------------------------------------------------------------
 
 
@@ -297,6 +338,11 @@ class Helper:
         except OSError as e:
             log(f"no virtual input device ({e}); mouse mode and typing unavailable")
             self.vi = None
+        try:
+            self.abs: AbsolutePointer | None = AbsolutePointer() if self.vi else None
+        except OSError as e:
+            log(f"no absolute pointer ({e}); pointer won't be centred")
+            self.abs = None
         emit({"ev": "ready", "uinput": self.vi is not None})
 
     # -- devices --
@@ -320,9 +366,21 @@ class Helper:
             return
         self.mouse = on
         self.release_all()
-        if self.vi and not on:
-            self.vi.park()
+        if on:
+            self.center()  # so you can see it switch on
+        else:
+            self.park()
         log(f"mouse mode {'on' if on else 'off'}")
+
+    def center(self) -> None:
+        if self.abs:
+            self.abs.move(0.5, 0.5)
+
+    def park(self) -> None:
+        if self.abs:
+            self.abs.move(1.0, 1.0)
+        elif self.vi:
+            self.vi.park()
 
     def release_all(self) -> None:
         if not self.vi:
@@ -350,6 +408,8 @@ class Helper:
         if code in hold:
             vi.button(hold[code], down)
             (self.held.add if down else self.held.discard)(hold[code])
+            if code == BTN_A and down:
+                emit({"ev": "click"})
             return
         if not down:
             return
@@ -422,8 +482,10 @@ class Helper:
         cmd = msg.get("cmd")
         if cmd == "mouse":
             self.set_mouse(bool(msg.get("on")))
-        elif cmd == "park" and self.vi:
-            self.vi.park()
+        elif cmd == "park":
+            self.park()
+        elif cmd == "center":
+            self.center()
         elif cmd == "type" and self.vi:
             skipped = self.vi.type_text(str(msg.get("text", "")))
             if msg.get("enter"):
@@ -478,6 +540,8 @@ def main() -> None:
         helper.release_all()
         if helper.vi:
             helper.vi.close()
+        if helper.abs:
+            helper.abs.close()
 
 
 if __name__ == "__main__":
