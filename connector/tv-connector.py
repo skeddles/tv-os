@@ -49,7 +49,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 HOME = Path.home()
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "tv-connector"
@@ -563,14 +563,29 @@ def find_wayland_display() -> str | None:
     return names[0] if names else None
 
 
+def output_scale(env: dict) -> float:
+    """The display's scale factor (the launcher's App size), from wlr-randr; 1 if unknown."""
+    try:
+        p = subprocess.run(["wlr-randr", "--json"], capture_output=True, timeout=10, env=env)
+        scales = [float(o.get("scale") or 1) for o in json.loads(p.stdout or b"[]") if o.get("enabled", True)]
+        return max(scales) if scales else 1.0
+    except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, AttributeError):
+        return 1.0
+
+
 def tool_tv_screenshot(args: dict, _store: Store) -> dict | tuple[str, bool]:
     scale = max(0.25, min(float(args.get("scale", 0.5)), 1.0))
     disp = find_wayland_display()
     if not disp:
         return "No Wayland display found (is the TV on the launcher session?)", True
     env = dict(os.environ, WAYLAND_DISPLAY=disp)
+    # grim's -s is relative to the layout size, which the launcher's App size
+    # setting shrinks (scale 2 = a 960x540 layout on a 1080p TV), so multiply.
+    out_scale = output_scale(env)
     try:
-        p = subprocess.run(["grim", "-s", str(scale), "-t", "jpeg", "-q", "75", "-"], capture_output=True, timeout=20, env=env)
+        p = subprocess.run(
+            ["grim", "-s", f"{scale * out_scale:g}", "-t", "jpeg", "-q", "75", "-"], capture_output=True, timeout=20, env=env
+        )
     except FileNotFoundError:
         return "grim isn't installed yet; it comes with the tv-os image update.", True
     except subprocess.TimeoutExpired:
