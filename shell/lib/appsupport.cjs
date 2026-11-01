@@ -129,6 +129,33 @@ function flatpakPids(appId) {
   return pids
 }
 
+/** From [{ pid, ppid, comm }], the app's own top processes: not bwrap (Flatpak's
+ *  sandbox wrapper), with a parent that is bwrap or outside the app. */
+function pickMains(procs) {
+  const byPid = new Map(procs.map((p) => [p.pid, p]))
+  return procs.filter((p) => {
+    if (p.comm === 'bwrap') return false
+    const parent = byPid.get(p.ppid)
+    return !parent || parent.comm === 'bwrap'
+  })
+}
+
+function procInfo(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    // "pid (comm) state ppid ..." - comm may contain spaces, so split at the last ')'
+    const close = stat.lastIndexOf(')')
+    return { pid: Number(pid), comm: stat.slice(stat.indexOf('(') + 1, close), ppid: Number(stat.slice(close + 2).split(' ')[1]) }
+  } catch {
+    return null
+  }
+}
+
+/** PIDs of the app's main process(es), for asking it to quit (SIGTERM). */
+function flatpakMainPids(appId) {
+  return pickMains(flatpakPids(appId).map(procInfo).filter(Boolean)).map((p) => p.pid)
+}
+
 /** True if any process of the app has a controller device open. */
 function appUsesController(appId) {
   if (isBrowser(appId)) return false
@@ -153,6 +180,8 @@ function appUsesController(appId) {
 }
 
 module.exports = {
+  pickMains,
+  flatpakMainPids,
   override,
   setOverride,
   clearOverrides,

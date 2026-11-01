@@ -119,4 +119,18 @@ const osu = require('../lib/osupdate.cjs')
   assert.equal(osu.summarizeStatus(JSON.stringify({ transaction: ['upgrade', 'uupd', '/x'], deployments: [] })).busy, true)
 }
 
+// The main process of a Flatpak app, below Flatpak's bwrap wrappers
+{
+  const { pickMains } = require('../lib/appsupport.cjs')
+  const procs = [
+    { pid: 4756, ppid: 1500, comm: 'bwrap' },
+    { pid: 4766, ppid: 4756, comm: 'bwrap' },
+    { pid: 4767, ppid: 4766, comm: 'chrome' },
+    { pid: 4770, ppid: 4767, comm: 'chrome' },
+    { pid: 4790, ppid: 4767, comm: 'zypak-sandbox' },
+  ]
+  assert.deepEqual(pickMains(procs).map((p) => p.pid), [4767])
+  assert.deepEqual(pickMains([{ pid: 10, ppid: 1, comm: 'firefox' }, { pid: 11, ppid: 10, comm: 'firefox' }]).map((p) => p.pid), [10])
+}
+
 console.log('smoke tests passed')

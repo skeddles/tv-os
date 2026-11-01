@@ -369,6 +369,30 @@ function quitSteam() {
   return true
 }
 
+/** Ask a Flatpak app to quit like closing its window would (SIGTERM to its main
+ *  process), so it can save: Chrome writes sign-in cookies on the way out, and
+ *  `flatpak kill` (SIGKILL) lost a Netflix sign-in. Force it after 5 s. */
+function closeApp(appId) {
+  const mains = support.flatpakMainPids(appId)
+  for (const pid of mains) {
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      /* already gone */
+    }
+  }
+  log(`closing ${appId} (${mains.length ? `asked pid ${mains.join(', ')} to quit` : 'no main process found'})`)
+  const started = Date.now()
+  const t = setInterval(() => {
+    if (support.flatpakPids(appId).length === 0) return clearInterval(t)
+    if (Date.now() - started > 5000 || mains.length === 0) {
+      clearInterval(t)
+      log(`${appId} didn't quit in time; stopping it`)
+      run('flatpak', ['kill', appId])
+    }
+  }, 250)
+}
+
 /** Xbox button / "home": leave the keyboard, hide a web layer, or close the native app in front. */
 function goHome() {
   if (typing) {
@@ -381,7 +405,7 @@ function goHome() {
     return
   }
   if (native && native.appId) {
-    run('flatpak', ['kill', native.appId])
+    closeApp(native.appId)
     return
   }
   showLauncher()
