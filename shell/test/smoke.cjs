@@ -140,26 +140,4 @@ const osu = require('../lib/osupdate.cjs')
   assert.equal(pickMain([{ pid: 1, comm: 'bwrap', cmdline: 'bwrap', start: 1 }]), null)
 }
 
-// Site icons: candidates from the real pages' <link> tags and a manifest
-{
-  const { parseIcons, parseManifest } = require('../lib/siteicons.cjs')
-  const nf = parseIcons(
-    '<link rel="shortcut icon" href="https://assets.nflxext.com/us/ffe/siteui/common/icons/nficon2023.ico"/>' +
-      '<link rel="apple-touch-icon" href="https://assets.nflxext.com/us/ffe/siteui/common/icons/nficon2016.png"/>',
-    'https://www.netflix.com/browse',
-  )
-  assert.deepEqual(nf.icons.map((i) => i.size), [16, 180])
-  const plex = parseIcons(
-    '<link rel="manifest" href="/manifest.json"/><link rel="apple-touch-icon" href="/icons/plex-152.png" sizes="152x152"/>',
-    'https://www.plex.tv/',
-  )
-  assert.equal(plex.manifest, 'https://www.plex.tv/manifest.json')
-  assert.deepEqual(plex.icons, [{ url: 'https://www.plex.tv/icons/plex-152.png', size: 152 }])
-  const m = parseManifest(
-    JSON.stringify({ icons: [{ src: 'a-512.png', sizes: '512x512', purpose: 'maskable' }, { src: '/b-192.png', sizes: '192x192' }] }),
-    'https://www.youtube.com/manifest.webmanifest',
-  )
-  assert.deepEqual(m, [{ url: 'https://www.youtube.com/b-192.png', size: 192 }])
-}
-
 console.log('smoke tests passed')

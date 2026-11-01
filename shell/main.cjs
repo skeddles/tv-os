@@ -29,7 +29,6 @@ const { InputHelper } = require('./lib/input.cjs')
 const support = require('./lib/appsupport.cjs')
 const steamproc = require('./lib/steamproc.cjs')
 const { OsUpdate } = require('./lib/osupdate.cjs')
-const { SiteIcons } = require('./lib/siteicons.cjs')
 const display = require('./lib/display.cjs')
 const { startControlServer } = require('./lib/control.cjs')
 
@@ -92,8 +91,6 @@ function serveFile(file) {
   return net.fetch(pathToFileURL(file).toString())
 }
 
-const siteIcons = new SiteIcons(path.join(paths.data, 'site-icons'), (u, init) => net.fetch(u, init), (m) => log(m))
-
 function registerProtocol() {
   protocol.handle('tvapp', (req) => {
     const url = new URL(req.url)
@@ -106,11 +103,6 @@ function registerProtocol() {
       return serveFile(exists(file) ? file : null)
     }
     if (url.host === 'icon') return serveFile(flatpak.findIcon(rest))
-    // tvapp://site-icon/?url=https://www.netflix.com/ - the service's own app icon
-    if (url.host === 'site-icon') {
-      const page = url.searchParams.get('url') || ''
-      return siteIcons.get(page).then((file) => serveFile(file))
-    }
     if (url.host === 'steam' && /^\d+$/.test(rest)) {
       const root = steam.steamRoot()
       return serveFile(root ? steam.findArtwork(root, rest) : null)
