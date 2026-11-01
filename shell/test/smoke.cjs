@@ -86,4 +86,29 @@ assert.deepEqual(steamproc.gamePids('abc'), [])
   assert.deepEqual(steamproc.gamePids('999999001').filter((p) => p === child.pid && !child.killed && child.exitCode === null && child.signalCode === null), [])
 }
 
+// OS update progress, from the TV's real rpm-ostree output
+const osu = require('../lib/osupdate.cjs')
+{
+  const p = { totalMB: 0, doneMB: 0, staging: false }
+  const lines = [
+    'Pulling manifest: ostree-unverified-registry:ghcr.io/skeddles/tv-os:latest',
+    'ostree chunk layers already present: 107',
+    'ostree chunk layers needed: 21 (912.2 MB)',
+    '[1/21] Fetching ostree chunk 2c4d6f8a0b1c3e5 (450.0 MB)...done',
+    '[2/21] Fetching ostree chunk 76b8d77920bf2547531 (12.7 MB)...',
+  ]
+  lines.forEach((l) => osu.parseLine(l, p))
+  assert.equal(Math.round(p.totalMB * 10), 9122)
+  assert.equal(p.doneMB, 450)
+  assert.equal(osu.percentOf(p), 49)
+  osu.parseLine('[2/21] Fetching ostree chunk 76b8d77920bf2547531 (850 kB)...done', p)
+  assert.equal(p.doneMB, 450.85)
+  osu.parseLine('Staging deployment...done', p)
+  assert.equal(osu.percentOf(p), 100)
+  assert.equal(osu.percentOf({ totalMB: 0, doneMB: 0 }), null)
+  const st = osu.summarizeStatus(JSON.stringify({ transaction: null, deployments: [{ staged: true, timestamp: 1793563531 }, { booted: true }] }))
+  assert.deepEqual(st, { busy: false, staged: { timestamp: 1793563531 } })
+  assert.equal(osu.summarizeStatus(JSON.stringify({ transaction: ['upgrade', 'uupd', '/x'], deployments: [] })).busy, true)
+}
+
 console.log('smoke tests passed')

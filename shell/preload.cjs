@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('tv', {
   resetInputPrefs: () => ipcRenderer.invoke('tv:resetInputPrefs'),
   resumeApp: () => ipcRenderer.invoke('tv:resumeApp'),
   quitApp: () => ipcRenderer.invoke('tv:quitApp'),
+  osUpdateStatus: () => ipcRenderer.invoke('tv:osUpdateStatus'),
+  osUpdateCheck: () => ipcRenderer.invoke('tv:osUpdateCheck'),
+  osUpdateDownload: () => ipcRenderer.invoke('tv:osUpdateDownload'),
   getVolume: () => ipcRenderer.invoke('tv:getVolume'),
   changeVolume: (step) => ipcRenderer.invoke('tv:changeVolume', step),
   onEvent: (cb) => {

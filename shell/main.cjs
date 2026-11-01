@@ -28,6 +28,7 @@ const store = require('./lib/store.cjs')
 const { InputHelper } = require('./lib/input.cjs')
 const support = require('./lib/appsupport.cjs')
 const steamproc = require('./lib/steamproc.cjs')
+const { OsUpdate } = require('./lib/osupdate.cjs')
 const display = require('./lib/display.cjs')
 const { startControlServer } = require('./lib/control.cjs')
 
@@ -58,6 +59,8 @@ let visibleLayer = null
 let native = null // { child, label, appId }
 // The Steam game (or Big Picture, appId null) last opened from the launcher.
 let steamApp = null // { appId, label, started, seen }
+// System image updates (Settings > System update); events go to the launcher.
+const osUpdate = new OsUpdate((state) => send({ type: 'os-update', state }), (m) => log(m))
 
 /**
  * What's in front: { kind: 'launcher' } | { kind: 'web', key, label }
@@ -560,6 +563,7 @@ async function handleControl(req) {
         launcherShowing: front.kind === 'launcher' || Boolean(typing),
         display: { scale },
         volume: await getVolume(),
+        osUpdate: await osUpdate.refresh(),
         launcher: await ui('state()'),
       }
     case 'press': {
@@ -745,6 +749,9 @@ function registerIpc() {
   })
   handle('tv:resetInputPrefs', () => support.clearOverrides())
   handle('tv:resumeApp', () => resumeSteam())
+  handle('tv:osUpdateStatus', () => osUpdate.refresh())
+  handle('tv:osUpdateCheck', () => osUpdate.check())
+  handle('tv:osUpdateDownload', () => osUpdate.download())
   handle('tv:quitApp', () => quitSteam())
   handle('tv:getVolume', () => getVolume())
   handle('tv:changeVolume', (step) => changeVolume(Number(step) > 0 ? 1 : -1))
