@@ -14,7 +14,7 @@ RUN cd /src/shell \
     && npm run check \
     && mkdir -p /out/app \
     && cp -a node_modules/electron/dist /out/electron \
-    && cp -a package.json main.cjs preload.cjs lib input /out/app/ \
+    && cp -a package.json main.cjs preload.cjs webview-preload.cjs lib input /out/app/ \
     && rm -f /out/app/input/test_input.py
 
 # Backup copy of the UI, shown if the live dev server on the TV isn't running.

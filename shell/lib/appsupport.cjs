@@ -71,8 +71,16 @@ function rememberControllerApp(appId) {
   }
 }
 
+// Browsers open the controller for web pages (the Gamepad API) whether or not
+// the page you're on uses it, so for them "opened the controller" means nothing.
+const BROWSER = /(firefox|chrom|brave|vivaldi|opera|librewolf|waterfox|floorp|zen|mullvad|torbrowser|epiphany|falkon|edge|qutebrowser)/i
+
+function isBrowser(appId) {
+  return BROWSER.test(appId)
+}
+
 function knownControllerApp(appId) {
-  return KNOWN_CONTROLLER_APPS.has(appId) || Boolean(prefs.detected[appId])
+  return KNOWN_CONTROLLER_APPS.has(appId) || (!isBrowser(appId) && Boolean(prefs.detected[appId]))
 }
 
 /** Device nodes of connected controllers: /dev/input/eventN marked as joysticks, plus /dev/input/jsN. */
@@ -123,6 +131,7 @@ function flatpakPids(appId) {
 
 /** True if any process of the app has a controller device open. */
 function appUsesController(appId) {
+  if (isBrowser(appId)) return false
   const nodes = controllerNodes()
   if (nodes.size === 0) return false
   for (const pid of flatpakPids(appId)) {
@@ -150,6 +159,7 @@ module.exports = {
   rememberControllerApp,
   knownControllerApp,
   appUsesController,
+  isBrowser,
   flatpakPids,
   KNOWN_CONTROLLER_APPS,
 }

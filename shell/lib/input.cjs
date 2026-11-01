@@ -7,9 +7,10 @@ const path = require('node:path')
 const readline = require('node:readline')
 
 class InputHelper extends EventEmitter {
-  constructor(log) {
+  constructor(log, script = 'tvlauncher-input.py') {
     super()
     this.log = log
+    this.script = script
     this.child = null
     this.ready = false
     this.uinput = false
@@ -18,7 +19,7 @@ class InputHelper extends EventEmitter {
   }
 
   start() {
-    const script = path.join(__dirname, '..', 'input', 'tvlauncher-input.py')
+    const script = path.join(__dirname, '..', 'input', this.script)
     const child = spawn('python3', ['-u', script], { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
     readline.createInterface({ input: child.stdout }).on('line', (line) => {
@@ -41,8 +42,8 @@ class InputHelper extends EventEmitter {
       this.ready = false
       this.child = null
       if (this.stopped) return
-      this.log(`input helper exited (${code}); restarting`)
-      setTimeout(() => this.start(), 2000)
+      this.log(`${this.script} exited (${code}); restarting`)
+      setTimeout(() => this.start(), code === 0 ? 2000 : 10000)
     })
   }
 

@@ -64,6 +64,9 @@ let typing = null // { front, webLayer } while the keyboard is up for another ap
 let mouseOn = false
 let scale = display.loadScale()
 const input = new InputHelper(log)
+const a11y = new InputHelper(log, 'tvlauncher-a11y.py')
+let lastClick = 0 // when A was last pressed in mouse mode
+const CLICK_TO_FOCUS_MS = 1500
 
 function send(event) {
   if (win && !win.isDestroyed()) win.webContents.send('tv:event', event)
@@ -201,6 +204,7 @@ function openWeb(url, userAgent, label) {
   } else {
     const view = new WebContentsView({
       webPreferences: {
+        preload: path.join(__dirname, 'webview-preload.cjs'),
         contextIsolation: true,
         sandbox: true,
         partition: 'persist:webapps',
@@ -362,7 +366,15 @@ setInterval(() => {
 
 // ---------- typing into other apps ----------
 
-function startTyping() {
+/** A text field got focus in the app in front. Open the keyboard if you just clicked it. */
+function onTextFocus(info) {
+  if (!mouseOn || typing || front.kind === 'launcher') return
+  if (Date.now() - lastClick > CLICK_TO_FOCUS_MS) return // focused by the app itself, not by you
+  log(`text field clicked in ${front.label} (${info.role || 'field'}); opening the keyboard`)
+  startTyping(Boolean(info.password))
+}
+
+function startTyping(password = false) {
   if (typing || front.kind === 'launcher') return
   typing = { front, webLayer: null }
   if (front.kind === 'web' && visibleLayer) {
@@ -373,7 +385,7 @@ function startTyping() {
     raiseLauncher()
   }
   updateMouse()
-  send({ type: 'keyboard-request', label: front.label || 'this app' })
+  send({ type: 'keyboard-request', label: front.label || 'this app', password })
 }
 
 /** Finish typing: put the app back in front and type the text into it (null = cancel). */
@@ -516,6 +528,10 @@ function registerIpc() {
     return { scale }
   })
   handle('tv:resetInputPrefs', () => support.clearOverrides())
+  // From web layers (webview-preload.cjs): a text field got focus.
+  ipcMain.on('tv:text-focus', (event, info) => {
+    if (visibleLayer && event.sender === visibleLayer.view.webContents) onTextFocus(info || {})
+  })
 }
 
 // ---------- start ----------
@@ -535,6 +551,13 @@ if (!app.requestSingleInstanceLock()) {
     input.on('home', () => goHome())
     input.on('toggle-mouse', () => toggleMouse())
     input.on('keyboard', () => startTyping())
+    input.on('click', () => {
+      lastClick = Date.now()
+    })
+    a11y.on('text-focus', (m) => {
+      if (front.kind === 'native') onTextFocus(m)
+    })
+    a11y.start()
     input.on('controller', (m) => log(`controller ${m.connected ? `connected: ${m.name}` : 'disconnected'}`))
     input.start()
     if (await waitForDevServer(8000)) await loadUi()
