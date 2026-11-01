@@ -375,6 +375,12 @@ class ConnectorTest(unittest.TestCase):
         self.assertEqual(r.getheader("Connection"), "close")
         conn.close()
 
+    def test_job_log_tail_keeps_latest_progress(self):
+        p = Path(TMP) / "job.log"
+        p.write_bytes(b"start\ndownloading 10%\rdownloading 55%\rdownloading 100%\nerror: disk full\n")
+        self.assertEqual(tvc.tail_lines(p, 2), "downloading 100%\nerror: disk full")
+        self.assertEqual(tvc.tail_lines(Path(TMP) / "missing.log", 5), "(no log yet)")
+
     def test_log_escaping(self):
         self.assertEqual(tvc.safe("a\nowner approved"), "a\\nowner approved")
         self.assertNotIn("\n", tvc.safe("x\ny"))

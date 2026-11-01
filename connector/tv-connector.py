@@ -49,7 +49,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 HOME = Path.home()
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "tv-connector"
@@ -79,6 +79,8 @@ REFRESH_REUSE_GRACE = 60  # a retried refresh within this window isn't treated a
 
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L
 JOB_PREFIX = "tvjob-"
+JOB_LOG_DIR = STATE_DIR / "jobs"
+MAX_JOBS = 30
 
 
 def log(*parts: object) -> None:
@@ -281,18 +283,45 @@ def job_unit(job_id: str) -> str:
     return JOB_PREFIX + job_id
 
 
+def job_log(job_id: str) -> Path:
+    return JOB_LOG_DIR / f"{job_id}.log"
+
+
+def tail_lines(path: Path, n: int) -> str:
+    """Last n lines of a log; progress bars drawn with \\r keep only their latest state."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 512 * 1024))
+            data = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return "(no log yet)"
+    lines = [line.rsplit("\r", 1)[-1] for line in data.split("\n")]
+    if lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines[-n:])
+
+
 def tool_start_job(args: dict, store: Store) -> tuple[str, bool]:
     command = str(args.get("command", "")).strip()
     if not command:
         return "No command given.", True
     name = re.sub(r"[^\w .,:/-]", "", str(args.get("name") or command))[:80]
     job_id = time.strftime("%m%d-%H%M%S-") + secrets.token_hex(2)
+    JOB_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = job_log(job_id)
+    log_path.touch()
     code, out = run(
         [
             "systemd-run", "--user", "--quiet",
             f"--unit={job_unit(job_id)}",
             f"--description=TV connector job: {name}",
             "--property=RemainAfterExit=yes",
+            # Output goes to a file: journald can drop the unit tag from lines
+            # written by very short-lived processes, hiding them from the log.
+            f"--property=StandardOutput=append:{log_path}",
+            f"--property=StandardError=append:{log_path}",
             f"--working-directory={HOME}",
             "--", "bash", "-lc", command,
         ],
@@ -302,9 +331,12 @@ def tool_start_job(args: dict, store: Store) -> tuple[str, bool]:
         return f"Couldn't start the job: {out}", True
     with store.lock:
         store.jobs[job_id] = {"command": command, "name": name, "started": now()}
-        # keep the 30 most recent
-        for old in sorted(store.jobs, key=lambda j: store.jobs[j]["started"])[:-30]:
+        for old in sorted(store.jobs, key=lambda j: store.jobs[j]["started"])[:-MAX_JOBS]:
             del store.jobs[old]
+            if job_state(old)["state"] != "running":
+                run(["systemctl", "--user", "reset-failed", job_unit(old)], timeout=10)
+                run(["systemctl", "--user", "stop", job_unit(old)], timeout=10)
+            job_log(old).unlink(missing_ok=True)
         store.save()
     return (
         f"Started job {job_id}. It keeps running if this chat ends or the connector restarts.\n"
@@ -351,13 +383,17 @@ def tool_job_status(args: dict, store: Store) -> tuple[str, bool]:
     lines_wanted = max(5, min(int(args.get("log_lines", 40)), 400))
     st = job_state(job_id)
     meta = store.jobs.get(job_id, {})
-    _, logs = run(
-        ["journalctl", "--user", "-u", job_unit(job_id), "-n", str(lines_wanted), "--no-pager", "-o", "cat"],
-        timeout=15,
-    )
+    if job_log(job_id).exists():
+        logs = tail_lines(job_log(job_id), lines_wanted)
+    else:  # jobs started by connector 0.1.0 logged to the journal
+        _, logs = run(
+            ["journalctl", "--user", "-u", job_unit(job_id), "-n", str(lines_wanted), "--no-pager", "-o", "cat"],
+            timeout=15,
+        )
     return (
         f"Job {job_id}: {st['state']}\nCommand: {meta.get('command', '?')}\n"
         f"Started: {st.get('ExecMainStartTimestamp', '?')}\nEnded: {st.get('ExecMainExitTimestamp') or '-'}\n"
+        f"Full log: {job_log(job_id)}\n"
         f"--- last {lines_wanted} log lines ---\n{clip(logs, 15000)}",
         False,
     )
@@ -468,7 +504,7 @@ TOOLS = {
         "description": (
             "Run a shell command on the TV PC as the owner's user (bash -lc) and return its output. "
             "Times out after timeout_seconds (default 120, max 900). sudo will fail: it needs the owner's "
-            "password. For downloads or anything slow (the TV's Wi-Fi is about 1.6 Mbps) use "
+            "password. For downloads, updates or anything slower than a couple of minutes use "
             "start_background_job."
         ),
         "schema": {
@@ -559,8 +595,8 @@ TOOLS = {
 INSTRUCTIONS = (
     "This connector controls the owner's TV PC (Bazzite Linux, KDE, Intel HD 530, 12 GB RAM). "
     "Commands run as the owner's normal user; sudo needs a password you don't have, so ask the owner to run "
-    "privileged commands at the TV. The TV's Wi-Fi is slow (about 1.6 Mbps): put anything slow in "
-    "start_background_job and check it with job_status. Explain what you are about to change before changing it."
+    "privileged commands at the TV. Put anything slow (downloads, OS updates) in start_background_job and "
+    "check it with job_status. Explain what you are about to change before changing it."
 )
 
 
