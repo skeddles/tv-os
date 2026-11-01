@@ -28,6 +28,7 @@ const store = require('./lib/store.cjs')
 const { InputHelper } = require('./lib/input.cjs')
 const support = require('./lib/appsupport.cjs')
 const display = require('./lib/display.cjs')
+const { startControlServer } = require('./lib/control.cjs')
 
 const DEV_URL = process.env.TVLAUNCHER_DEV_URL || 'http://localhost:5173/'
 const FALLBACK_URL = 'tvapp://ui/index.html'
@@ -454,6 +455,94 @@ async function changeVolume(step) {
   return v
 }
 
+// ---------- remote control (Claude, via the connector) ----------
+
+/** Run a __tvRemote call in the launcher page (lib/remote.ts in the UI). */
+async function ui(call) {
+  if (!win || win.isDestroyed()) return null
+  return win.webContents.executeJavaScript(`window.__tvRemote ? window.__tvRemote.${call} : null`, true)
+}
+
+const APP_KEYS = { up: 'up', down: 'down', left: 'left', right: 'right', select: 'enter', back: 'esc', x: 'space' }
+
+async function handleControl(req) {
+  const cmd = req && req.cmd
+  const frontInfo = () => ({
+    kind: front.kind,
+    label: front.label || null,
+    appId: front.appId || null,
+    mouseMode: mouseOn,
+    typing: Boolean(typing),
+  })
+  switch (cmd) {
+    case 'status':
+      return {
+        ok: true,
+        front: frontInfo(),
+        launcherShowing: front.kind === 'launcher' || Boolean(typing),
+        display: { scale },
+        volume: await getVolume(),
+        launcher: await ui('state()'),
+      }
+    case 'press': {
+      const button = String(req.button || '')
+      const times = Math.max(1, Math.min(Number(req.times) || 1, 20))
+      if (button === 'home') {
+        goHome()
+        return { ok: true, front: frontInfo() }
+      }
+      if (front.kind === 'launcher' || typing) {
+        const done = await ui(`press(${JSON.stringify(button)}, ${times})`)
+        if (!done) return { ok: false, error: `unknown button ${button}` }
+        return { ok: true, launcher: await ui('state()') }
+      }
+      const key = APP_KEYS[button]
+      if (!key) return { ok: false, error: `${button} isn't available while ${front.label} is in front` }
+      if (front.kind === 'web' && visibleLayer) {
+        const code = { up: 'Up', down: 'Down', left: 'Left', right: 'Right', enter: 'Return', esc: 'Escape', space: 'Space' }[key]
+        for (let i = 0; i < times; i++) {
+          visibleLayer.view.webContents.sendInputEvent({ type: 'keyDown', keyCode: code })
+          visibleLayer.view.webContents.sendInputEvent({ type: 'keyUp', keyCode: code })
+        }
+      } else {
+        for (let i = 0; i < times; i++) input.send({ cmd: 'key', key })
+      }
+      return { ok: true, front: frontInfo() }
+    }
+    case 'open': {
+      if (front.kind !== 'launcher' && !typing) goHome()
+      const r = await ui(`open(${JSON.stringify(String(req.name || ''))})`)
+      return r || { ok: false, error: 'launcher not ready' }
+    }
+    case 'close':
+      if (front.kind === 'launcher') return { ok: true, note: 'nothing open; the launcher is in front' }
+      goHome()
+      return { ok: true }
+    case 'type': {
+      const text = String(req.text || '').slice(0, 5000)
+      const enter = Boolean(req.enter)
+      if (typing) endTyping(text, enter)
+      else if (front.kind === 'web' && visibleLayer) {
+        visibleLayer.view.webContents.insertText(text)
+        if (enter) {
+          visibleLayer.view.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+          visibleLayer.view.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+        }
+      } else if (front.kind === 'native') input.send({ cmd: 'type', text, enter })
+      else return { ok: false, error: 'no app is waiting for text (the launcher is in front)' }
+      return { ok: true }
+    }
+    case 'mouse': {
+      if (front.kind === 'launcher') return { ok: false, error: 'mouse mode is only for apps' }
+      support.setOverride(front.key, Boolean(req.on))
+      updateMouse()
+      return { ok: true, front: frontInfo() }
+    }
+    default:
+      return { ok: false, error: `unknown command ${cmd}` }
+  }
+}
+
 // ---------- display ----------
 
 function applyZoom() {
@@ -605,6 +694,7 @@ if (!app.requestSingleInstanceLock()) {
     a11y.start()
     input.on('controller', (m) => log(`controller ${m.connected ? `connected: ${m.name}` : 'disconnected'}`))
     input.start()
+    startControlServer(handleControl, log)
     if (await waitForDevServer(8000)) await loadUi()
     else await loadFallback()
   })

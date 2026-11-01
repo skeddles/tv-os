@@ -49,7 +49,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 
 HOME = Path.home()
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "tv-connector"
@@ -498,6 +498,131 @@ def tool_system_status(_args: dict, store: Store) -> tuple[str, bool]:
     return "\n".join(parts), False
 
 
+# ---- remote control of the launcher (talks to the shell's control socket) ----
+
+
+def control(request: dict, timeout: float = 15) -> dict:
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    path = os.path.join(runtime, "tvlauncher", "control.sock")
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(path)
+            s.sendall((json.dumps(request) + "\n").encode())
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+        return json.loads(buf or b"{}")
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"the launcher isn't answering ({e}). Is the TV on the launcher session?"}
+
+
+def describe_launcher(st: dict | None) -> str:
+    if not st:
+        return "(launcher page not loaded)"
+    lines = [f"Screen: {st.get('title') or st.get('screen')}"]
+    if st.get("typing") is not None:
+        lines.append(f"Keyboard open, text so far: {st['typing']!r}")
+    if st.get("focused"):
+        lines.append(f"Highlighted: {st['focused']['label']}")
+    if st.get("notice"):
+        lines.append(f"Message on screen: {st['notice']}")
+    for sec in st.get("sections", []):
+        items = sec.get("items", [])
+        if items:
+            lines.append(f"[{sec.get('title') or '—'}] " + " | ".join(items))
+    return "\n".join(lines)
+
+
+def tool_tv_screen(_args: dict, _store: Store) -> tuple[str, bool]:
+    r = control({"cmd": "status"})
+    if not r.get("ok"):
+        return r.get("error", "no answer"), True
+    f = r["front"]
+    if f["kind"] == "launcher":
+        top = "The launcher is in front."
+    else:
+        top = f"In front: {f['label']} ({f['kind']}); mouse mode {'on' if f['mouseMode'] else 'off'}."
+    if f.get("typing"):
+        top += " The on-screen keyboard is open for it."
+    vol = r.get("volume") or {}
+    extra = f"App size {int(r['display']['scale'] * 100)}%, volume {vol.get('volume')}%{' (muted)' if vol.get('muted') else ''}."
+    body = describe_launcher(r.get("launcher")) if r.get("launcherShowing") else "(launcher hidden behind the app; use tv_screenshot to see the app)"
+    return f"{top}\n{extra}\n\n{body}", False
+
+
+def find_wayland_display() -> str | None:
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    try:
+        names = sorted(n for n in os.listdir(runtime) if n.startswith("wayland-") and not n.endswith(".lock"))
+    except OSError:
+        return None
+    return names[0] if names else None
+
+
+def tool_tv_screenshot(args: dict, _store: Store) -> dict | tuple[str, bool]:
+    scale = max(0.25, min(float(args.get("scale", 0.5)), 1.0))
+    disp = find_wayland_display()
+    if not disp:
+        return "No Wayland display found (is the TV on the launcher session?)", True
+    env = dict(os.environ, WAYLAND_DISPLAY=disp)
+    try:
+        p = subprocess.run(["grim", "-s", str(scale), "-t", "jpeg", "-q", "75", "-"], capture_output=True, timeout=20, env=env)
+    except FileNotFoundError:
+        return "grim isn't installed yet; it comes with the tv-os image update.", True
+    except subprocess.TimeoutExpired:
+        return "Screenshot timed out.", True
+    if p.returncode != 0 or not p.stdout:
+        return f"Screenshot failed: {p.stderr.decode(errors='replace').strip()[:300]}", True
+    return {
+        "content": [
+            {"type": "image", "data": base64.b64encode(p.stdout).decode(), "mimeType": "image/jpeg"},
+            {"type": "text", "text": f"TV screen at {int(scale * 100)}% size ({len(p.stdout) // 1024} KB)."},
+        ],
+        "isError": False,
+    }
+
+
+def tool_tv_press(args: dict, _store: Store) -> tuple[str, bool]:
+    r = control({"cmd": "press", "button": str(args.get("button", "")), "times": int(args.get("times", 1))})
+    if not r.get("ok"):
+        return r.get("error", "failed"), True
+    if r.get("launcher"):
+        return describe_launcher(r["launcher"]), False
+    f = r.get("front", {})
+    return f"Pressed. In front: {f.get('label') or 'the launcher'}.", False
+
+
+def tool_tv_open(args: dict, _store: Store) -> tuple[str, bool]:
+    r = control({"cmd": "open", "name": str(args.get("name", ""))})
+    if r.get("ok"):
+        return f"Opening {r.get('title')}.", False
+    if r.get("choices"):
+        return "No tile matches. Available: " + ", ".join(r["choices"]), True
+    return r.get("error", "failed"), True
+
+
+def tool_tv_close_app(_args: dict, _store: Store) -> tuple[str, bool]:
+    r = control({"cmd": "close"})
+    return (r.get("note") or "Closed the app; the launcher is in front.") if r.get("ok") else r.get("error", "failed"), not r.get("ok")
+
+
+def tool_tv_type(args: dict, _store: Store) -> tuple[str, bool]:
+    r = control({"cmd": "type", "text": str(args.get("text", "")), "enter": bool(args.get("enter"))})
+    return ("Typed." if r.get("ok") else r.get("error", "failed")), not r.get("ok")
+
+
+def tool_tv_mouse_mode(args: dict, _store: Store) -> tuple[str, bool]:
+    r = control({"cmd": "mouse", "on": bool(args.get("on"))})
+    if not r.get("ok"):
+        return r.get("error", "failed"), True
+    f = r["front"]
+    return f"Mouse mode {'on' if f['mouseMode'] else 'off'} for {f['label']} (remembered for that app).", False
+
+
 TOOLS = {
     "run_command": {
         "fn": tool_run_command,
@@ -581,6 +706,66 @@ TOOLS = {
         },
         "annotations": {"title": "Write a file", "destructiveHint": True},
     },
+    "tv_screen": {
+        "fn": tool_tv_screen,
+        "description": (
+            "What's on the TV right now, as text: which app is in front, mouse mode, volume, and when the "
+            "launcher is showing, its screen, highlighted item and every row of tiles/settings."
+        ),
+        "schema": {"type": "object", "properties": {}},
+        "annotations": {"title": "Read the TV screen", "readOnlyHint": True},
+    },
+    "tv_screenshot": {
+        "fn": tool_tv_screenshot,
+        "description": "A picture of what the TV is showing (any app). scale 0.25-1 (default 0.5 = 960x540).",
+        "schema": {"type": "object", "properties": {"scale": {"type": "number", "minimum": 0.25, "maximum": 1}}},
+        "annotations": {"title": "Screenshot the TV", "readOnlyHint": True},
+    },
+    "tv_press": {
+        "fn": tool_tv_press,
+        "description": (
+            "Press a controller button. In the launcher: up/down/left/right move the highlight, select = A, "
+            "back = B, search = Y, home = Xbox button. In an app: arrows, select = Enter, back = Escape, "
+            "x = Space, home closes the app. Returns the launcher screen after pressing."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "button": {"type": "string", "enum": ["up", "down", "left", "right", "select", "back", "search", "x", "home"]},
+                "times": {"type": "integer", "minimum": 1, "maximum": 20},
+            },
+            "required": ["button"],
+        },
+        "annotations": {"title": "Press a controller button", "destructiveHint": False},
+    },
+    "tv_open": {
+        "fn": tool_tv_open,
+        "description": "Open an app, game or streaming service from the launcher by its tile name (e.g. 'Plex', 'Firefox').",
+        "schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+        "annotations": {"title": "Open an app", "destructiveHint": False},
+    },
+    "tv_close_app": {
+        "fn": tool_tv_close_app,
+        "description": "Close the app in front and go back to the launcher (like a short press of the Xbox button).",
+        "schema": {"type": "object", "properties": {}},
+        "annotations": {"title": "Close the app", "destructiveHint": True},
+    },
+    "tv_type": {
+        "fn": tool_tv_type,
+        "description": "Type text into the app in front (or into the open on-screen keyboard). enter=true presses Enter after.",
+        "schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}, "enter": {"type": "boolean"}},
+            "required": ["text"],
+        },
+        "annotations": {"title": "Type into the TV", "destructiveHint": False},
+    },
+    "tv_mouse_mode": {
+        "fn": tool_tv_mouse_mode,
+        "description": "Turn mouse mode on or off for the app in front (remembered for that app).",
+        "schema": {"type": "object", "properties": {"on": {"type": "boolean"}}, "required": ["on"]},
+        "annotations": {"title": "Set mouse mode", "destructiveHint": False},
+    },
     "system_status": {
         "fn": tool_system_status,
         "description": (
@@ -593,6 +778,8 @@ TOOLS = {
 }
 
 INSTRUCTIONS = (
+    "Use tv_screen to see what the TV shows (tv_screenshot for a picture), tv_press / tv_open / tv_type / "
+    "tv_close_app to operate it like the controller. "
     "This connector controls the owner's TV PC (Bazzite Linux, KDE, Intel HD 530, 12 GB RAM). "
     "Commands run as the owner's normal user; sudo needs a password you don't have, so ask the owner to run "
     "privileged commands at the TV. Put anything slow (downloads, OS updates) in start_background_job and "
@@ -1184,12 +1371,15 @@ class App:
             detail = args.get("command") or args.get("path") or args.get("job_id") or ""
             log(f"TOOL {name} [{client_id}] {safe(detail)}")
             try:
-                text, is_error = tool["fn"](args, self.store)
+                result = tool["fn"](args, self.store)
             except (ValueError, TypeError) as e:
-                text, is_error = f"Bad arguments: {e}", True
+                result = (f"Bad arguments: {e}", True)
             except Exception as e:
                 log("tool error", name, repr(e))
-                text, is_error = f"Tool failed: {e}", True
+                result = (f"Tool failed: {e}", True)
+            if isinstance(result, dict):  # rich content (e.g. an image)
+                return ok(result)
+            text, is_error = result
             return ok({"content": [{"type": "text", "text": text}], "isError": is_error})
         return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"Method not found: {method}"}}
 

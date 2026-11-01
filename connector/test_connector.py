@@ -420,7 +420,9 @@ class ConnectorTest(unittest.TestCase):
         self.assertEqual(s, 202)
         s, _, d = self.rpc(t, "tools/list")
         names = {tool["name"] for tool in json.loads(d)["result"]["tools"]}
-        self.assertEqual(names, {"run_command", "start_background_job", "job_status", "stop_job", "read_file", "write_file", "system_status"})
+        self.assertEqual(names, {"run_command", "start_background_job", "job_status", "stop_job", "read_file", "write_file",
+                                 "system_status", "tv_screen", "tv_screenshot", "tv_press", "tv_open", "tv_close_app",
+                                 "tv_type", "tv_mouse_mode"})
 
         r = self.call(t, "run_command", {"command": "echo hello; echo oops >&2; exit 3"})
         self.assertTrue(r["isError"])
@@ -448,6 +450,76 @@ class ConnectorTest(unittest.TestCase):
         self.assertIn("error", json.loads(d))
         s, _, d = self.rpc(t, "bogus/method")
         self.assertEqual(json.loads(d)["error"]["code"], -32601)
+
+    def test_tv_tools_talk_to_the_launcher_socket(self):
+        import socket as pysocket
+        runtime = tempfile.mkdtemp(prefix="rt-")
+        os.makedirs(os.path.join(runtime, "tvlauncher"))
+        path = os.path.join(runtime, "tvlauncher", "control.sock")
+        seen = []
+        launcher = {"screen": "home", "title": "Home", "focused": {"id": "x", "label": "Netflix"}, "typing": None,
+                    "notice": None, "sections": [{"title": "Streaming", "items": ["▶ Netflix", "Plex"]}]}
+        replies = {
+            "status": {"ok": True, "front": {"kind": "launcher", "label": None, "mouseMode": False, "typing": False},
+                       "launcherShowing": True, "display": {"scale": 1.5}, "volume": {"volume": 80, "muted": False},
+                       "launcher": launcher},
+            "press": {"ok": True, "launcher": launcher},
+            "open": {"ok": False, "choices": ["Netflix", "Plex"]},
+        }
+        srv = pysocket.socket(pysocket.AF_UNIX, pysocket.SOCK_STREAM)
+        srv.bind(path)
+        srv.listen(5)
+
+        def serve():
+            while True:
+                try:
+                    c, _ = srv.accept()
+                except OSError:
+                    return
+                req = json.loads(c.makefile().readline())
+                seen.append(req)
+                c.sendall((json.dumps(replies.get(req["cmd"], {"ok": True})) + "\n").encode())
+                c.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+        old_rt = os.environ.get("XDG_RUNTIME_DIR")
+        os.environ["XDG_RUNTIME_DIR"] = runtime
+        try:
+            cid = self.register()
+            t = self.get_tokens(cid)[0]["access_token"]
+            r = self.call(t, "tv_screen", {})
+            self.assertFalse(r["isError"])
+            self.assertIn("launcher is in front", r["content"][0]["text"])
+            self.assertIn("Highlighted: Netflix", r["content"][0]["text"])
+            self.assertIn("volume 80%", r["content"][0]["text"])
+            r = self.call(t, "tv_press", {"button": "right", "times": 2})
+            self.assertIn("[Streaming]", r["content"][0]["text"])
+            r = self.call(t, "tv_open", {"name": "Nope"})
+            self.assertTrue(r["isError"])
+            self.assertIn("Netflix, Plex", r["content"][0]["text"])
+            self.assertEqual([q["cmd"] for q in seen], ["status", "press", "open"])
+            self.assertEqual(seen[1], {"cmd": "press", "button": "right", "times": 2})
+        finally:
+            srv.close()
+            if old_rt is None:
+                os.environ.pop("XDG_RUNTIME_DIR", None)
+            else:
+                os.environ["XDG_RUNTIME_DIR"] = old_rt
+
+    def test_tv_tools_report_launcher_not_running(self):
+        old_rt = os.environ.get("XDG_RUNTIME_DIR")
+        os.environ["XDG_RUNTIME_DIR"] = tempfile.mkdtemp(prefix="rt-empty-")
+        try:
+            cid = self.register()
+            t = self.get_tokens(cid)[0]["access_token"]
+            r = self.call(t, "tv_screen", {})
+            self.assertTrue(r["isError"])
+            self.assertIn("isn't answering", r["content"][0]["text"])
+        finally:
+            if old_rt is None:
+                os.environ.pop("XDG_RUNTIME_DIR", None)
+            else:
+                os.environ["XDG_RUNTIME_DIR"] = old_rt
 
     def test_bad_token_and_bad_origin(self):
         s, _, _ = self.rpc("not-a-token", "ping")

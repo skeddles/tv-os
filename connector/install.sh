@@ -19,6 +19,11 @@ APP_DIR="$HOME/.local/share/tv-connector"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT="$UNIT_DIR/tv-connector.service"
 SERVER="$APP_DIR/tv-connector.py"
+# The tv-os image ships the connector and its service; use those when present.
+BUILTIN=/usr/libexec/tv-connector/tv-connector.py
+if [ -f "$BUILTIN" ] && [ -f /usr/lib/systemd/user/tv-connector.service ]; then
+    SERVER="$BUILTIN"
+fi
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
@@ -67,6 +72,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     systemctl --user disable --now tv-connector.service 2>/dev/null || true
     rm -f "$UNIT"
     systemctl --user daemon-reload
+    # Without its settings the built-in service stays off (ConditionPathExists).
     rm -rf "$APP_DIR" "${XDG_CONFIG_HOME:-$HOME/.config}/tv-connector" "${XDG_STATE_HOME:-$HOME/.local/state}/tv-connector"
     echo "Done. Also remove the connector in claude.ai: Settings > Connectors."
     exit 0
@@ -76,21 +82,26 @@ command -v python3 >/dev/null || die "python3 is missing (it ships with Bazzite,
 command -v tailscale >/dev/null || die "tailscale is missing. On Bazzite it should be built in; check with: rpm -q tailscale"
 
 # ---- 1. The server file (the only download) ----
-say "1/4  Downloading the connector"
+say "1/4  Getting the connector"
 mkdir -p "$APP_DIR"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$here/tv-connector.py" ] && [ -z "${TV_CONNECTOR_FORCE_DOWNLOAD:-}" ] && [ "$here" != "$APP_DIR" ]; then
+if [ "$SERVER" = "$BUILTIN" ]; then
+    echo "Using the connector built into tv-os ($BUILTIN)."
+    rm -f "$APP_DIR/tv-connector.py" "$APP_DIR/tv-connector.py.prev"
+elif [ -f "$here/tv-connector.py" ] && [ -z "${TV_CONNECTOR_FORCE_DOWNLOAD:-}" ] && [ "$here" != "$APP_DIR" ]; then
     cp "$here/tv-connector.py" "$SERVER.new"
     echo "Using the copy next to this script."
 else
     curl -fsSL --retry 5 --retry-delay 3 --connect-timeout 20 "$BASE/tv-connector.py" -o "$SERVER.new" \
         || die "Download failed. Check the internet connection and run this again."
 fi
-python3 -m py_compile "$SERVER.new" || die "The downloaded file is damaged. Run this again."
-mv "$SERVER.new" "$SERVER"
-chmod 0755 "$SERVER"
-cp "$0" "$APP_DIR/install.sh" 2>/dev/null || true
-echo "Saved $SERVER"
+if [ "$SERVER" != "$BUILTIN" ]; then
+    python3 -m py_compile "$SERVER.new" || die "The downloaded file is damaged. Run this again."
+    mv "$SERVER.new" "$SERVER"
+    chmod 0755 "$SERVER"
+    cp "$0" "$APP_DIR/install.sh" 2>/dev/null || true
+    echo "Saved $SERVER"
+fi
 
 # ---- 2. Tailscale ----
 say "2/4  Tailscale"
@@ -114,6 +125,10 @@ echo "This PC's address: $PUBLIC_URL"
 say "3/4  Setting up the service"
 python3 "$SERVER" setup --public-url "$PUBLIC_URL" --port "$PORT"
 
+if [ "$SERVER" = "$BUILTIN" ]; then
+    # The image's unit (/usr/lib/systemd/user) is used; an old home-folder copy would override it.
+    rm -f "$UNIT"
+else
 mkdir -p "$UNIT_DIR"
 cat > "$UNIT" <<EOF
 [Unit]
@@ -128,6 +143,7 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 EOF
+fi
 systemctl --user daemon-reload
 systemctl --user enable tv-connector.service >/dev/null
 systemctl --user restart tv-connector.service

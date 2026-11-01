@@ -1,0 +1,4 @@
+#!/usr/bin/bash
+# tv-connector status | new-code | revoke | setup --public-url URL
+#   (first-time setup with Tailscale Funnel: bash /usr/libexec/tv-connector/install.sh)
+exec /usr/bin/python3 /usr/libexec/tv-connector/tv-connector.py "$@"

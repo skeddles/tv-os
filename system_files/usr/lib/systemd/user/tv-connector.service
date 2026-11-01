@@ -1,0 +1,13 @@
+[Unit]
+Description=TV connector (lets Claude control this PC)
+# Does nothing until set up: bash /usr/libexec/tv-connector/install.sh
+ConditionPathExists=%h/.config/tv-connector/config.json
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/libexec/tv-connector/tv-connector.py serve
+Restart=always
+RestartSec=5
+# Logs: journalctl --user -u tv-connector -f
+
+[Install]
+WantedBy=default.target

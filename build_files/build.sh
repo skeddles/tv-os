@@ -12,7 +12,8 @@ cp -avf /ctx/system_files/. /
 # libraries Electron needs (nss, gtk3, mesa-libgbm, alsa-lib...). Adding
 # Fedora's Xwayland conflicts with Bazzite's, so only add what's missing:
 # nodejs/npm run the launcher UI's Vite dev server; git pulls UI updates.
-dnf5 install -y nodejs npm git
+# grim: screenshots for the Claude connector's tv_screenshot tool
+dnf5 install -y nodejs npm git grim
 command -v cage
 
 ### Electron shell
@@ -23,6 +24,10 @@ cp -a /ctx/shell-out/app /usr/lib/tvlauncher/app
 chown root:root /usr/lib/tvlauncher/electron/chrome-sandbox
 chmod 4755 /usr/lib/tvlauncher/electron/chrome-sandbox
 
+### Claude connector (lets Claude control the TV; set up per user with install.sh)
+install -Dm0755 /ctx/connector/tv-connector.py /usr/libexec/tv-connector/tv-connector.py
+install -Dm0755 /ctx/connector/install.sh /usr/libexec/tv-connector/install.sh
+
 ### Backup copy of the UI
 install -d /usr/share/tvlauncher
 cp -a /ctx/shell-out/ui-fallback /usr/share/tvlauncher/ui-fallback
@@ -32,6 +37,8 @@ chmod 0755 /usr/bin/tvlauncher-*
 
 ### UI services start for every user at login (they do nothing harmful in KDE)
 systemctl --global enable tvlauncher-ui-update.service tvlauncher-ui-dev.service
+# Only runs once someone has set it up (ConditionPathExists in the unit).
+systemctl --global enable tv-connector.service
 
 ### Record what this image is, shown in Settings > About
 echo "tv-os $(date -u +%Y-%m-%d) on $(rpm -E %fedora 2>/dev/null | sed 's/^/Fedora /')" > /usr/share/tvlauncher/image-version

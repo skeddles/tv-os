@@ -32,6 +32,7 @@ RUN set -eu; mkdir -p /out/ui-fallback; \
 FROM scratch AS ctx
 COPY build_files /
 COPY system_files /system_files
+COPY connector /connector
 COPY --from=shell-build /out /shell-out
 
 # ---- Final image ----
