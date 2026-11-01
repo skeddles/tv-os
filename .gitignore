@@ -5,3 +5,7 @@ _build-*/**
 *_chunkah_*
 *_rpm-ostree_*
 shell/node_modules
+
+# Python bytecode
+__pycache__/
+*.pyc
