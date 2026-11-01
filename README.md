@@ -94,6 +94,22 @@ Defaults are in `/usr/share/tvlauncher/config`. Override any of them in
 | `TVLAUNCHER_UI_POLL` | `5` | Seconds between update checks |
 | `TVLAUNCHER_START_STEAM` | `0` | `1` starts Steam in the background at login |
 
+## Known hardware issue: HDMI black screen
+
+This PC's HDMI socket goes through an LSPCON (DisplayPort-to-HDMI) converter
+chip, which sometimes fails to wake up after the display is switched off and
+on (warm reboot, session restart). The kernel log then shows `LSPCON resume
+failed` / `LSPCON mode hasn't settled`, the TV says "no signal", and only a
+cold power-off and on brings it back. It's a long-known Intel driver timing
+issue on HP mini desktops
+([drm/intel #165](https://gitlab.freedesktop.org/drm/intel/-/issues/165),
+[fdo #107503](https://bugs.freedesktop.org/show_bug.cgi?id=107503)).
+
+- Reliable fix: connect the TV with a **DisplayPort-to-HDMI cable** from one of
+  the PC's DisplayPort sockets, which don't use the converter.
+- Meanwhile: shut down and power on rather than restart, and restart only the
+  launcher app (Settings → Restart launcher), never the whole session.
+
 ## Troubleshooting
 
 All logs go to the journal. From a console or SSH:

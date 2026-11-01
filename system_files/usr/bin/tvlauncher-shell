@@ -1,14 +1,20 @@
 #!/usr/bin/bash
 # Runs the Electron shell and restarts it if it exits or crashes, so restarting
-# the launcher never ends the Cage session. Logs: journalctl --user -t tvlauncher-shell
+# the launcher never ends the Cage session. That matters on this PC: ending the
+# session turns the display off and on, and the HDMI port's LSPCON converter
+# sometimes fails to wake up afterwards (black screen until a cold power-on).
+# Logs: journalctl -t tvlauncher-shell
 ELECTRON=/usr/lib/tvlauncher/electron/electron
-APP=/usr/lib/tvlauncher/app
-
-# For testing a shell checked out somewhere else: TVLAUNCHER_SHELL_APP=~/tv-os/shell
-APP="${TVLAUNCHER_SHELL_APP:-$APP}"
 
 failures=0
 while true; do
+    # Re-read settings every time, so a changed TVLAUNCHER_SHELL_APP (e.g. a
+    # shell being tested from the home folder) applies on the next restart.
+    TVLAUNCHER_SHELL_APP=
+    # shellcheck source=/dev/null
+    . /usr/libexec/tvlauncher-config
+    APP="${TVLAUNCHER_SHELL_APP:-/usr/lib/tvlauncher/app}"
+
     started=$(date +%s)
     "$ELECTRON" "$APP" --ozone-platform=wayland --enable-features=UseOzonePlatform 2>&1 \
         | systemd-cat -t tvlauncher-shell
