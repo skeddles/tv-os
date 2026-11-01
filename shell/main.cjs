@@ -25,6 +25,10 @@ const DEV_URL = process.env.TVLAUNCHER_DEV_URL || 'http://localhost:5173/'
 const FALLBACK_URL = 'tvapp://ui/index.html'
 const MAX_WEB_LAYERS = 3
 
+function log(msg) {
+  console.log(`[shell] ${msg}`)
+}
+
 protocol.registerSchemesAsPrivileged([
   { scheme: 'tvapp', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
@@ -127,7 +131,9 @@ function createWindow() {
     kiosk: true,
     frame: false,
     backgroundColor: '#111316',
-    show: false,
+    // Shown immediately: on Wayland (Cage) a hidden window never paints, so
+    // 'ready-to-show' never fires. The dark background avoids a white flash.
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -135,14 +141,20 @@ function createWindow() {
       backgroundThrottling: false,
     },
   })
-  win.once('ready-to-show', () => win.show())
+  win.webContents.on('did-finish-load', () => log(`loaded ${win.webContents.getURL()} (${uiSource})`))
+  win.webContents.on('console-message', (e) => {
+    if (e.level === 'error') log(`page error: ${e.message}`)
+  })
   win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
     if (isMainFrame && url.startsWith(DEV_URL)) {
-      console.warn('[shell] dev server failed to load:', desc)
+      log(`dev server failed to load: ${desc}`)
       loadFallback()
     }
   })
-  win.webContents.on('render-process-gone', () => setTimeout(loadUi, 1000))
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log(`renderer gone: ${details.reason}; reloading`)
+    setTimeout(loadUi, 1000)
+  })
   // Links that try to open new windows open as a web layer instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) openWeb(url)
@@ -335,6 +347,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.whenReady().then(async () => {
+    log(`starting ${app.getVersion()} (Electron ${process.versions.electron}, ${process.env.XDG_SESSION_TYPE || '?'} session)`)
     fs.mkdirSync(paths.data, { recursive: true })
     registerProtocol()
     registerIpc()

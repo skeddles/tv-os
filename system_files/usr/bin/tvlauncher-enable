@@ -1,11 +1,19 @@
 #!/usr/bin/bash
 # Makes the PC boot straight into the TV launcher for the user who runs this.
 #   sudo tvlauncher-enable      turn on   (run once, from your normal account)
-#   sudo tvlauncher-disable     back to the normal KDE desktop at boot
-# Bazzite's login screen is KDE's Plasma Login Manager (an SDDM fork); this
-# writes its auto-login drop-in file.
+#   sudo tvlauncher-disable     back to how auto-login was before
+#
+# Bazzite's login screen is KDE's Plasma Login Manager (an SDDM fork). It reads
+# /etc/plasmalogin.conf.d/* first and /etc/plasmalogin.conf last, so settings in
+# the main file win. Turning on auto-login during setup (or in System Settings)
+# writes Session=plasma.desktop there, which would override us. So this:
+#   1. backs up /etc/plasmalogin.conf and comments out its [Autologin] lines,
+#   2. writes our own drop-in file.
+# tvlauncher-disable removes the drop-in and restores the backup.
 set -euo pipefail
 
+MAIN=/etc/plasmalogin.conf
+BACKUP=/etc/plasmalogin.conf.tvlauncher-backup
 CONF_DIR=/etc/plasmalogin.conf.d
 CONF="$CONF_DIR/zz-tvlauncher.conf"
 
@@ -16,7 +24,11 @@ fi
 case "$(basename "$0")" in
     tvlauncher-disable)
         rm -f "$CONF"
-        echo "Auto-login to the TV launcher is off. After a restart you'll get the normal login screen."
+        if [ -f "$BACKUP" ]; then
+            mv -f "$BACKUP" "$MAIN"
+            echo "Restored your previous login settings from $BACKUP."
+        fi
+        echo "Auto-login to the TV launcher is off. Restart to get your previous login (KDE desktop or login screen)."
         exit 0
         ;;
 esac
@@ -27,6 +39,27 @@ if [ -z "$user" ] || [ "$user" = root ] || ! id "$user" >/dev/null 2>&1; then
     exit 1
 fi
 
+# 1. Neutralise auto-login lines in the main file (they'd override the drop-in).
+if [ -f "$MAIN" ]; then
+    [ -f "$BACKUP" ] || cp -p "$MAIN" "$BACKUP"
+    python3 - "$MAIN" <<'PY'
+import re, sys
+path = sys.argv[1]
+lines = open(path).read().splitlines(keepends=True)
+section = None
+out = []
+for line in lines:
+    m = re.match(r"\s*\[([^\]]+)\]", line)
+    if m:
+        section = m.group(1).strip()
+    elif section == "Autologin" and re.match(r"\s*(User|Session|Relogin)\s*=", line):
+        line = "# (disabled by tvlauncher-enable) " + line.lstrip()
+    out.append(line)
+open(path, "w").writelines(out)
+PY
+fi
+
+# 2. Our drop-in.
 mkdir -p "$CONF_DIR"
 cat > "$CONF" <<EOF
 # Written by tvlauncher-enable. Remove with: sudo tvlauncher-disable
@@ -36,5 +69,15 @@ Session=tvlauncher.desktop
 # Log back in if the session ever ends (also works around KDE bug 522006).
 Relogin=true
 EOF
+
+# Check the result the way the login manager will read it: main file last wins.
+effective=$(cat "$CONF_DIR"/*.conf "$MAIN" 2>/dev/null | awk '
+    /^[[:space:]]*\[/ { s = $0; gsub(/[][[:space:]]/, "", s) }
+    s == "Autologin" && /^[[:space:]]*Session[[:space:]]*=/ { sub(/^[^=]*=[[:space:]]*/, ""); v = $0 }
+    END { print v }')
+if [ "$effective" != "tvlauncher.desktop" ]; then
+    echo "Warning: the login manager will still start '$effective'. Check $MAIN and $CONF_DIR." >&2
+    exit 1
+fi
 echo "Done. $user will be logged straight into the TV launcher at boot."
 echo "Restart now with: systemctl reboot"
