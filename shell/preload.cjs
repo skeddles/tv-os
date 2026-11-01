@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('tv', {
   resumeApp: () => ipcRenderer.invoke('tv:resumeApp'),
   quitApp: () => ipcRenderer.invoke('tv:quitApp'),
   osUpdateStatus: () => ipcRenderer.invoke('tv:osUpdateStatus'),
+  newPairingCode: () => ipcRenderer.invoke('tv:newPairingCode'),
   osUpdateCheck: () => ipcRenderer.invoke('tv:osUpdateCheck'),
   osUpdateDownload: () => ipcRenderer.invoke('tv:osUpdateDownload'),
   getVolume: () => ipcRenderer.invoke('tv:getVolume'),

@@ -535,6 +535,32 @@ async function changeVolume(step) {
   return v
 }
 
+// ---------- Claude connector pairing ----------
+
+const CONNECTOR = '/usr/libexec/tv-connector/tv-connector.py'
+const PAIRING_CODE = /\b([A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})\b/
+
+/** Make a new one-time pairing code for connecting Claude (Settings > Connect Claude).
+ *  Someone at the TV can already do anything on it, so showing a code here gives
+ *  nothing away; a code still works only once, within 7 days. */
+async function newPairingCode() {
+  let url = null
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.config/tv-connector/config.json'), 'utf8'))
+    if (typeof cfg.public_url === 'string') url = `${cfg.public_url}/mcp`
+  } catch {
+    throw new Error('The Claude connector is not set up on this PC yet')
+  }
+  const r = await run('python3', [CONNECTOR, 'new-code'], { timeout: 30_000 })
+  const m = r.stdout.match(PAIRING_CODE)
+  if (!r.ok || !m) {
+    log(`new pairing code failed: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+    throw new Error("Couldn't make a pairing code")
+  }
+  log('new Claude pairing code shown on screen')
+  return { code: m[1], url }
+}
+
 // ---------- remote control (Claude, via the connector) ----------
 
 /** Run a __tvRemote call in the launcher page (lib/remote.ts in the UI). */
@@ -750,6 +776,7 @@ function registerIpc() {
   handle('tv:resetInputPrefs', () => support.clearOverrides())
   handle('tv:resumeApp', () => resumeSteam())
   handle('tv:osUpdateStatus', () => osUpdate.refresh())
+  handle('tv:newPairingCode', () => newPairingCode())
   handle('tv:osUpdateCheck', () => osUpdate.check())
   handle('tv:osUpdateDownload', () => osUpdate.download())
   handle('tv:quitApp', () => quitSteam())
