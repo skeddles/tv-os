@@ -337,6 +337,13 @@ class Helper:
         self.held: set[int] = set()  # virtual buttons/keys held down
         self.view_down = False
         self.view_chord = False  # View was used for a volume chord this press
+        # D-pad vs pointer: whichever was used last decides what A and B do in
+        # mouse mode (Enter/Back on the highlighted item, or click/right-click
+        # at the pointer). Chrome's spatial navigation moves a highlight with
+        # the arrow keys, so streaming sites work with just the D-pad.
+        self.last_dpad = 0.0
+        self.last_pointer = 0.0
+        self.key_presses: set[int] = set()  # A/B presses being handled as keys
         try:
             self.vi: VirtualInput | None = VirtualInput()
         except OSError as e:
@@ -435,6 +442,17 @@ class Helper:
         if not (self.mouse and self.vi):
             return
         vi = self.vi
+        if code in (BTN_A, BTN_B) and (code in self.key_presses or (down and self.dpad_mode())):
+            if down:
+                self.key_presses.add(code)
+                if code == BTN_A:
+                    vi.tap("enter")
+                    emit({"ev": "click"})  # a text field opened this way still gets the keyboard
+                else:
+                    vi.tap("left", alt=True)  # Back
+            else:
+                self.key_presses.discard(code)
+            return
         hold = {BTN_A: BTN_LEFT, BTN_B: BTN_RIGHT, BTN_THUMBL: BTN_MIDDLE}
         if code in hold:
             vi.button(hold[code], down)
@@ -457,6 +475,10 @@ class Helper:
         elif code == BTN_THUMBR:
             vi.tap("tab")
 
+    def dpad_mode(self) -> bool:
+        """True when the D-pad was used more recently than the pointer stick."""
+        return self.last_dpad > self.last_pointer
+
     def on_hat(self, code: int, value: int) -> None:
         if value and self.view_down and code == ABS_HAT0Y:
             self.view_chord = True
@@ -464,6 +486,7 @@ class Helper:
             return
         if not (self.mouse and self.vi) or value == 0 or self.view_down:
             return
+        self.last_dpad = time.monotonic()
         if code == ABS_HAT0X:
             self.vi.tap("right" if value > 0 else "left")
         else:
@@ -491,6 +514,8 @@ class Helper:
             whole = int(total)
             self.frac[i] = total - whole if m else 0.0
             out.append(whole)
+        if out[0] or out[1]:
+            self.last_pointer = time.monotonic()
         if any(out):
             self.vi.rel(*out)
         for i, v in enumerate(out[2:]):

@@ -62,6 +62,9 @@ def make_helper():
     h.held = set()
     h.view_down = False
     h.view_chord = False
+    h.last_dpad = 0.0
+    h.last_pointer = 0.0
+    h.key_presses = set()
     h.vi = FakeVI()
     h.abs = FakeAbs()
     return h
@@ -163,6 +166,44 @@ class InputTest(unittest.TestCase):
             ],
         )
         self.assertEqual(self.events(), ["click", "keyboard"])
+
+    def test_a_and_b_follow_the_dpad_or_the_pointer(self):
+        h = make_helper()
+        pad = FakePad()
+        h.pads = {"event99": pad}
+        h.set_mouse(True)
+        h.on_hat(tvi.ABS_HAT0Y, 1)  # D-pad down: a highlight moves in the page
+        h.on_hat(tvi.ABS_HAT0Y, 0)
+        h.on_button(tvi.BTN_A, True)
+        h.on_button(tvi.BTN_A, False)
+        h.on_button(tvi.BTN_B, True)
+        h.on_button(tvi.BTN_B, False)
+        self.assertEqual(
+            h.vi.log,
+            [("tap", "down", False, False), ("tap", "enter", False, False), ("tap", "left", False, True)],
+        )
+        # moving the pointer switches A back to clicking
+        h.vi.log.clear()
+        pad.axes[tvi.ABS_X] = 1.0
+        h.tick(0.1)
+        pad.axes[tvi.ABS_X] = 0.0
+        h.on_button(tvi.BTN_A, True)
+        h.on_button(tvi.BTN_A, False)
+        self.assertEqual([e for e in h.vi.log if e[0] == "button"], [("button", tvi.BTN_LEFT, True), ("button", tvi.BTN_LEFT, False)])
+        self.assertEqual(self.events(), ["click", "click"])
+
+    def test_a_held_across_a_mode_switch_releases_cleanly(self):
+        h = make_helper()
+        pad = FakePad()
+        h.pads = {"event99": pad}
+        h.set_mouse(True)
+        h.on_hat(tvi.ABS_HAT0X, 1)
+        h.on_button(tvi.BTN_A, True)  # Enter
+        pad.axes[tvi.ABS_X] = 1.0
+        h.tick(0.1)  # pointer moves while A is still down
+        h.on_button(tvi.BTN_A, False)
+        self.assertNotIn(("button", tvi.BTN_LEFT, False), h.vi.log)  # no stray mouse-button release
+        self.assertEqual(h.key_presses, set())
 
     def test_turning_mouse_off_releases_held_buttons_and_parks(self):
         h = make_helper()
