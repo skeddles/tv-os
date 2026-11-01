@@ -9,6 +9,8 @@ RUN dnf -y install nodejs npm git && dnf clean all
 COPY shell /src/shell
 RUN cd /src/shell \
     && npm ci --no-audit --no-fund \
+    && node node_modules/electron/install.js \
+    && test -x node_modules/electron/dist/electron \
     && npm run check \
     && mkdir -p /out/app \
     && cp -a node_modules/electron/dist /out/electron \
