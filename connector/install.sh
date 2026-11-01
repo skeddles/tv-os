@@ -163,7 +163,9 @@ say "4/4  Publishing with Tailscale Funnel"
 echo "If Funnel isn't enabled for your tailnet yet, Tailscale prints a link: open it, approve, and this continues."
 tailscale funnel --bg "$PORT" 2>/dev/null || sudo tailscale funnel --bg "$PORT"
 
-say "Done. Now add it in Claude:"
+INSTALLER="$APP_DIR/install.sh"
+[ "$SERVER" = "$BUILTIN" ] && INSTALLER=/usr/libexec/tv-connector/install.sh
+say "Done. If Claude isn't connected yet, add it in Claude:"
 cat <<EOF
 
   1. Open claude.ai > Settings > Connectors > Add custom connector.
@@ -174,5 +176,5 @@ cat <<EOF
   If you lose the code:  python3 $SERVER new-code
   Sign Claude out:       python3 $SERVER revoke
   Watch what Claude does: journalctl --user -u tv-connector -f
-  Remove everything:     bash $APP_DIR/install.sh --uninstall
+  Remove everything:     bash $INSTALLER --uninstall
 EOF
