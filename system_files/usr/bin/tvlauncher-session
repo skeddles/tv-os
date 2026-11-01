@@ -5,6 +5,8 @@
 
 export XDG_CURRENT_DESKTOP=tvlauncher
 export XDG_SESSION_DESKTOP=tvlauncher
+# A bigger pointer for TV viewing (apps scale it further with the App size setting).
+export XCURSOR_SIZE="${XCURSOR_SIZE:-32}"
 
 # Let user services (the UI updater and dev server) see this session.
 systemctl --user import-environment XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null || true

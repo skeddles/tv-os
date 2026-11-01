@@ -40,4 +40,32 @@ delete require.cache[require.resolve('../lib/steam.cjs')]
 const games = require('../lib/steam.cjs').listSteamGames()
 assert.deepEqual(games.map((g) => g.name), ['Stardew Valley'])
 
+// display: the TV's real wlr-randr output (Nov 1) — prefers 1360x768, offers 1080p
+const display = require('../lib/display.cjs')
+const tvRandr = `DP-3 "LG Electronics LG TV 0x01010101 (DP-3 via HDMI)"
+  Make: LG Electronics
+  Model: LG TV
+  Serial: 0x01010101
+  Physical size: 1600x900 mm
+  Enabled: yes
+  Modes:
+    1360x768 px, 60.014999 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 59.939999 Hz
+    1920x1080 px, 30.000000 Hz
+  Position: 0,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+`
+const outs = display.parseOutputs(tvRandr)
+assert.equal(outs.length, 1)
+assert.equal(outs[0].name, 'DP-3')
+assert.equal(outs[0].enabled, true)
+assert.equal(outs[0].modes.length, 5)
+assert.equal(outs[0].modes[0].current, true)
+assert.equal(display.pickMode(outs[0].modes).text, '1920x1080@60.000000Hz')
+assert.ok(display.SCALES.includes(display.DEFAULT_SCALE))
+
 console.log('smoke tests passed')
