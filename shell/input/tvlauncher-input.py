@@ -15,6 +15,7 @@ Talks to the Electron shell with JSON lines:
                      {"ev": "click"}            A pressed in mouse mode (lets the shell
                                                 open the keyboard on text fields)
                      {"ev": "home"}             Xbox button, short press
+                     {"ev": "volume", "step": 1}  View held + D-pad up/down (anywhere)
                      {"ev": "toggle-mouse"}     Xbox button held ~0.7 s
                      {"ev": "keyboard"}         Y, while in mouse mode
                      {"ev": "controller", "name": "...", "connected": true}
@@ -24,7 +25,8 @@ Mouse mode (Xbox One pad, xpad driver):
   right stick scroll
   A / B       left / right click        X        Space (play/pause)
   Y           on-screen keyboard        D-pad    arrow keys
-  Menu        Enter                     View     Escape
+  Menu        Enter                     View     Escape (on release, if no chord)
+  View + D-pad up/down: volume (in the launcher and in apps)
   LB / RB     Back / Forward            L3 / R3  middle click / Tab
 """
 
@@ -333,6 +335,8 @@ class Helper:
         self.frac = [0.0, 0.0, 0.0, 0.0]  # x, y, wheel, hwheel leftovers
         self.notch_acc = [0.0, 0.0]
         self.held: set[int] = set()  # virtual buttons/keys held down
+        self.view_down = False
+        self.view_chord = False  # View was used for a volume chord this press
         try:
             self.vi: VirtualInput | None = VirtualInput()
         except OSError as e:
@@ -401,6 +405,15 @@ class Helper:
                     emit({"ev": "home"})
                 self.guide_down_at = None
             return
+        if code == BTN_SELECT:
+            if down:
+                self.view_down, self.view_chord = True, False
+            else:
+                self.view_down = False
+                # View on its own = Escape (mouse mode); not when it was a volume chord
+                if not self.view_chord and self.mouse and self.vi:
+                    self.vi.tap("esc")
+            return
         if not (self.mouse and self.vi):
             return
         vi = self.vi
@@ -419,8 +432,6 @@ class Helper:
             vi.tap("space")
         elif code == BTN_START:
             vi.tap("enter")
-        elif code == BTN_SELECT:
-            vi.tap("esc")
         elif code == BTN_TL:
             vi.tap("left", alt=True)  # Back in browsers
         elif code == BTN_TR:
@@ -429,7 +440,11 @@ class Helper:
             vi.tap("tab")
 
     def on_hat(self, code: int, value: int) -> None:
-        if not (self.mouse and self.vi) or value == 0:
+        if value and self.view_down and code == ABS_HAT0Y:
+            self.view_chord = True
+            emit({"ev": "volume", "step": 1 if value < 0 else -1})
+            return
+        if not (self.mouse and self.vi) or value == 0 or self.view_down:
             return
         if code == ABS_HAT0X:
             self.vi.tap("right" if value > 0 else "left")

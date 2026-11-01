@@ -437,6 +437,23 @@ function endTyping(text, enter = false) {
   send({ type: 'keyboard-closed' })
 }
 
+// ---------- volume ----------
+
+async function getVolume() {
+  const r = await run('wpctl', ['get-volume', '@DEFAULT_AUDIO_SINK@'])
+  const m = r.stdout.match(/Volume:\s*([\d.]+)(.*MUTED)?/)
+  return m ? { volume: Math.round(Number(m[1]) * 100), muted: Boolean(m[2]) } : { volume: null, muted: false }
+}
+
+async function changeVolume(step) {
+  // 5% steps, capped at 100% (over HDMI that's full level; the TV remote does the rest)
+  await run('wpctl', ['set-mute', '@DEFAULT_AUDIO_SINK@', '0'])
+  await run('wpctl', ['set-volume', '-l', '1.0', '@DEFAULT_AUDIO_SINK@', `5%${step > 0 ? '+' : '-'}`])
+  const v = await getVolume()
+  send({ type: 'volume', ...v })
+  return v
+}
+
 // ---------- display ----------
 
 function applyZoom() {
@@ -553,6 +570,8 @@ function registerIpc() {
     return { scale }
   })
   handle('tv:resetInputPrefs', () => support.clearOverrides())
+  handle('tv:getVolume', () => getVolume())
+  handle('tv:changeVolume', (step) => changeVolume(Number(step) > 0 ? 1 : -1))
   // From web layers (webview-preload.cjs): a text field got focus.
   ipcMain.on('tv:text-focus', (event, info) => {
     if (visibleLayer && event.sender === visibleLayer.view.webContents) onTextFocus(info || {})
@@ -576,6 +595,7 @@ if (!app.requestSingleInstanceLock()) {
     input.on('home', () => goHome())
     input.on('toggle-mouse', () => toggleMouse())
     input.on('keyboard', () => startTyping())
+    input.on('volume', (m) => changeVolume(m.step))
     input.on('click', () => {
       lastClick = Date.now()
     })

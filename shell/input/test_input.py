@@ -60,6 +60,8 @@ def make_helper():
     h.frac = [0.0] * 4
     h.notch_acc = [0.0, 0.0]
     h.held = set()
+    h.view_down = False
+    h.view_chord = False
     h.vi = FakeVI()
     h.abs = FakeAbs()
     return h
@@ -143,6 +145,7 @@ class InputTest(unittest.TestCase):
         h.on_button(tvi.BTN_X, True)
         h.on_button(tvi.BTN_START, True)
         h.on_button(tvi.BTN_SELECT, True)
+        h.on_button(tvi.BTN_SELECT, False)  # Escape fires on release
         h.on_button(tvi.BTN_TL, True)
         h.on_hat(tvi.ABS_HAT0Y, -1)
         h.on_hat(tvi.ABS_HAT0Y, 0)
@@ -201,6 +204,23 @@ class InputTest(unittest.TestCase):
         self.assertAlmostEqual(pad.norm(tvi.ABS_RZ, 1023), 1.0)
         self.assertAlmostEqual(pad.norm(tvi.ABS_X, 32767), 1.0, places=3)
         self.assertAlmostEqual(pad.norm(tvi.ABS_X, -32768), -1.0, places=3)
+
+    def test_view_plus_dpad_is_volume_not_escape(self):
+        for mouse in (False, True):
+            self.out.truncate(0)
+            self.out.seek(0)
+            h = make_helper()
+            h.set_mouse(mouse)
+            h.vi.log.clear()
+            h.on_button(tvi.BTN_SELECT, True)
+            h.on_hat(tvi.ABS_HAT0Y, -1)  # up
+            h.on_hat(tvi.ABS_HAT0Y, 0)
+            h.on_hat(tvi.ABS_HAT0Y, 1)  # down
+            h.on_button(tvi.BTN_SELECT, False)
+            self.assertEqual([json.loads(l) for l in self.out.getvalue().splitlines()],
+                             [{"ev": "volume", "step": 1}, {"ev": "volume", "step": -1}])
+            self.assertNotIn(("tap", "esc", False, False), h.vi.log)  # no Escape, no arrow keys
+            self.assertFalse(any(e[0] == "tap" for e in h.vi.log))
 
     def test_type_command(self):
         h = make_helper()
