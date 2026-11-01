@@ -8,24 +8,12 @@ set -ouex pipefail
 cp -avf /ctx/system_files/. /
 
 ### Packages
-# cage:   the kiosk compositor (one full-screen app at a time)
-# nodejs: runs the launcher UI's Vite dev server on the TV
-# The rest are libraries Electron needs; most are already in Bazzite.
-dnf5 install -y \
-    cage \
-    nodejs \
-    npm \
-    git \
-    nss \
-    atk \
-    at-spi2-atk \
-    gtk3 \
-    mesa-libgbm \
-    alsa-lib \
-    libdrm \
-    cups-libs \
-    libxkbcommon \
-    xorg-x11-server-Xwayland
+# Bazzite already includes cage (the kiosk compositor), its own Xwayland and the
+# libraries Electron needs (nss, gtk3, mesa-libgbm, alsa-lib...). Adding
+# Fedora's Xwayland conflicts with Bazzite's, so only add what's missing:
+# nodejs/npm run the launcher UI's Vite dev server; git pulls UI updates.
+dnf5 install -y nodejs npm git
+command -v cage
 
 ### Electron shell
 install -d /usr/lib/tvlauncher
