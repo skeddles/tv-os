@@ -30,6 +30,7 @@ const support = require('./lib/appsupport.cjs')
 const steamproc = require('./lib/steamproc.cjs')
 const { OsUpdate } = require('./lib/osupdate.cjs')
 const pointerPrefs = require('./lib/pointerprefs.cjs')
+const { Plex } = require('./lib/plex.cjs')
 const display = require('./lib/display.cjs')
 const { startControlServer } = require('./lib/control.cjs')
 
@@ -94,6 +95,41 @@ function serveFile(file) {
   return net.fetch(pathToFileURL(file).toString())
 }
 
+const plex = new Plex((u, init) => net.fetch(u, init), (m) => log(m))
+const PLEX_APP = 'tv.plex.PlexHTPC'
+
+/** Start a Plex item in Plex HTPC: open the app if needed (and wait until it has
+ *  connected to the server), then send it the item. */
+async function playOnPlex(ratingKey, label) {
+  const running = support.flatpakPids(PLEX_APP).length > 0
+  if (!running) {
+    spawnApp('flatpak', ['run', PLEX_APP], 'Plex', PLEX_APP)
+  } else {
+    // Already open behind the launcher: track it and step aside so it shows.
+    if (!native || native.appId !== PLEX_APP) {
+      native = { child: null, label: 'Plex', appId: PLEX_APP, started: Date.now(), seen: true, starterExited: true }
+    }
+    setFront({ kind: 'native', key: `flatpak:${PLEX_APP}`, label: 'Plex', appId: PLEX_APP, usesController: support.knownControllerApp(PLEX_APP) })
+  }
+  // A freshly started Plex needs a few seconds before it takes commands.
+  const until = Date.now() + (running ? 8000 : 45000)
+  let lastError = null
+  while (Date.now() < until) {
+    try {
+      await plex.play(ratingKey)
+      log(`plex: playing ${label}`)
+      if (running && win && !win.isDestroyed()) win.hide()
+      return
+    } catch (e) {
+      lastError = e
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+  }
+  log(`plex: couldn't start ${label}: ${lastError && lastError.message}`)
+  send({ type: 'notice', message: `Couldn't start ${label} in Plex` })
+  if (running && win && !win.isDestroyed()) win.hide() // show Plex anyway
+}
+
 function registerProtocol() {
   protocol.handle('tvapp', (req) => {
     const url = new URL(req.url)
@@ -106,6 +142,7 @@ function registerProtocol() {
       return serveFile(exists(file) ? file : null)
     }
     if (url.host === 'icon') return serveFile(flatpak.findIcon(rest))
+    if (url.host === 'plex-image') return plex.image(url.searchParams.get('path') || '').catch(() => new Response('', { status: 502 }))
     if (url.host === 'steam' && /^\d+$/.test(rest)) {
       const root = steam.steamRoot()
       return serveFile(root ? steam.findArtwork(root, rest) : null)
@@ -740,6 +777,10 @@ async function launch(target, label) {
       spawn('steam', ['-silent', `steam://rungameid/${target.appId}`], { detached: true, stdio: 'ignore' }).unref()
       startSteam(String(target.appId), label)
       return
+    case 'plex':
+      if (!/^\d+$/.test(String(target.ratingKey))) throw new Error('bad Plex item')
+      playOnPlex(String(target.ratingKey), label) // carries on in the background
+      return
     case 'steam-bigpicture':
       spawn('steam', ['steam://open/bigpicture'], { detached: true, stdio: 'ignore' }).unref()
       startSteam(null, label)
@@ -820,6 +861,7 @@ function registerIpc() {
   })
   handle('tv:resumeApp', () => resumeSteam())
   handle('tv:osUpdateStatus', () => osUpdate.refresh())
+  handle('tv:plexHome', () => plex.home())
   handle('tv:newPairingCode', () => newPairingCode())
   handle('tv:osUpdateCheck', () => osUpdate.check())
   handle('tv:osUpdateDownload', () => osUpdate.download())

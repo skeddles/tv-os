@@ -140,4 +140,20 @@ const osu = require('../lib/osupdate.cjs')
   assert.equal(pickMain([{ pid: 1, comm: 'bwrap', cmdline: 'bwrap', start: 1 }]), null)
 }
 
+// Plex: credentials from plex.ini and items for tiles
+{
+  const { parseIni, toItem } = require('../lib/plex.cjs')
+  const c = parseIni('[General]\nversion=1\n\n[web]\nClientID=abc123\nPlexAuthToken=TOKEN20charsXXXXXXXX\nVolume=100\n')
+  assert.deepEqual(c, { token: 'TOKEN20charsXXXXXXXX', playerId: 'abc123' })
+  assert.deepEqual(parseIni('[ui]\nPlexAuthToken=nope\n'), { token: '', playerId: '' })
+  const ep = toItem({ ratingKey: 42, type: 'episode', grandparentTitle: 'Brooklyn Nine-Nine', title: 'Cheddar', parentIndex: 4, index: 11, thumb: '/library/metadata/42/thumb/1', viewOffset: 780000, duration: 1300000 })
+  assert.equal(ep.title, 'Brooklyn Nine-Nine')
+  assert.equal(ep.subtitle, 'S4E11 · Cheddar')
+  assert.equal(ep.progress, 60)
+  assert.equal(ep.image, 'tvapp://plex-image/?path=%2Flibrary%2Fmetadata%2F42%2Fthumb%2F1')
+  const movie = toItem({ ratingKey: '7', type: 'movie', title: 'Soul', year: 2020, art: '/library/metadata/7/art/2' })
+  assert.equal(movie.subtitle, '2020')
+  assert.equal(movie.progress, null)
+}
+
 console.log('smoke tests passed')
