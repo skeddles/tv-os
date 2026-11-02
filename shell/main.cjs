@@ -450,6 +450,8 @@ function goHome() {
     closeApp(native.appId)
     return
   }
+  // The launcher is in front: tell it (it closes one of your own apps if open).
+  send({ type: 'home' })
   showLauncher()
 }
 
