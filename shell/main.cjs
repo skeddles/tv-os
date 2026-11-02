@@ -33,6 +33,7 @@ const steamproc = require('./lib/steamproc.cjs')
 const { OsUpdate } = require('./lib/osupdate.cjs')
 const pointerPrefs = require('./lib/pointerprefs.cjs')
 const { Plex } = require('./lib/plex.cjs')
+const itchGame = require('./lib/itchgame.cjs')
 const display = require('./lib/display.cjs')
 const { startControlServer } = require('./lib/control.cjs')
 
@@ -296,19 +297,21 @@ function hideWeb() {
 
 // ---------- native apps ----------
 
-function spawnApp(cmd, args, label, appId) {
+/** opts.key / opts.usesController: for a game run inside another app's Flatpak
+ *  (itch games), so it gets its own mouse mode setting. */
+function spawnApp(cmd, args, label, appId, opts = {}) {
   const child = spawn(cmd, args, { detached: true, stdio: 'ignore', env: process.env })
   child.unref()
   const app = { child, label, appId, started: Date.now(), seen: false, starterExited: false }
   native = app
   setFront({
     kind: 'native',
-    key: `flatpak:${appId}`,
+    key: opts.key || `flatpak:${appId}`,
     label,
     appId,
-    usesController: support.knownControllerApp(appId),
+    usesController: opts.usesController ?? support.knownControllerApp(appId),
   })
-  checkAppStream(appId)
+  if (!opts.key) checkAppStream(appId)
   child.on('error', (e) => send({ type: 'notice', message: `Couldn't open ${label}: ${e.message}` }))
   // `flatpak run` can exit while the app keeps running (seen with Firefox), so
   // the app counts as running while its own processes exist (watchApps below).
@@ -798,6 +801,16 @@ async function launch(target, label) {
       if (!flatpak.VALID_ID.test(target.appId)) throw new Error('bad app id')
       spawnApp('flatpak', ['run', target.appId, ...(Array.isArray(target.args) ? target.args.map(String) : [])], label, target.appId)
       return
+    case 'itch-game': {
+      // A game installed by the itch app, started without the itch app's window
+      const t = itchGame.findTarget(String(target.folder || ''))
+      log(`${label}: starting ${t.kind === 'windows' ? 'with Wine ' : ''}${t.path}`)
+      spawnApp('flatpak', itchGame.flatpakArgs(t), label, itchGame.ITCH_APP, {
+        key: `itch-game:${target.folder}`,
+        usesController: true, // a game: no mouse mode unless you turn it on (View + X)
+      })
+      return
+    }
     case 'steam':
       if (!/^\d+$/.test(String(target.appId))) throw new Error('bad Steam id')
       // Handed to the Steam client; the game is tracked by its processes (watchSteam).

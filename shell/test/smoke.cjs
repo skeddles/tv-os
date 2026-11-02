@@ -163,4 +163,30 @@ const osu = require('../lib/osupdate.cjs')
   assert.equal(season.subtitle, 'Season 1')
 }
 
+
+// ---- itch games: which program to run ----
+{
+  const itchGame = require('../lib/itchgame.cjs')
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'itch-'))
+  const game = path.join(tmp, 'my-game')
+  fs.mkdirSync(path.join(game, 'data'), { recursive: true })
+  const mz = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(5000)])
+  fs.writeFileSync(path.join(game, 'Game.exe'), mz)
+  fs.writeFileSync(path.join(game, 'UnityCrashHandler64.exe'), Buffer.concat([mz, Buffer.alloc(9000)]))
+  fs.writeFileSync(path.join(game, 'readme.txt'), 'hi')
+  let t = itchGame.findTarget('my-game', tmp)
+  assert.equal(t.kind, 'windows')
+  assert.equal(path.basename(t.path), 'Game.exe')
+  assert.deepEqual(itchGame.flatpakArgs(t).slice(-3), ['--command=wine', 'io.itch.itch', t.path])
+  // A Linux build wins over Windows
+  fs.writeFileSync(path.join(game, 'data', 'Game.x86_64'), Buffer.concat([Buffer.from([0x7f]), Buffer.from('ELF'), Buffer.alloc(100)]))
+  t = itchGame.findTarget('my-game', tmp)
+  assert.equal(t.kind, 'linux')
+  assert.equal(t.dir, path.join(game, 'data'))
+  assert.equal(itchGame.flatpakArgs(t).at(-1), 'io.itch.itch')
+  assert.throws(() => itchGame.findTarget('../etc', tmp))
+  assert.throws(() => itchGame.findTarget('missing', tmp))
+  fs.rmSync(tmp, { recursive: true })
+}
+
 console.log('smoke tests passed')
