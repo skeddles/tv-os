@@ -68,7 +68,7 @@ const osUpdate = new OsUpdate((state) => send({ type: 'os-update', state }), (m)
 
 /**
  * What's in front: { kind: 'launcher' } | { kind: 'web', key, label }
- * | { kind: 'native', key, label, appId, usesController } | { kind: 'steam', key, label }
+ * | { kind: 'native', key, label, appId, usesController, readingController?, manual? } | { kind: 'steam', key, label }
  */
 let front = { kind: 'launcher' }
 let typing = null // { front, webLayer } while the keyboard is up for another app
@@ -490,6 +490,14 @@ function setFront(f) {
 function wantMouse() {
   if (typing || front.kind === 'launcher') return false
   if (support.neverMouse(front.key)) return false
+  // View + X while a game is reading the controller: for this time only
+  if (front.manual !== undefined) return front.manual
+  // Something in the app is reading the controller right now (a game, including
+  // one started from inside another app such as itch): no mouse mode, whatever
+  // was chosen for the app before. Mouse mode turns X into Space and A into a
+  // click, and a game reading the controller would get both (seen with a Godot
+  // game launched through itch: X also pressed Space, 100 of 104 presses).
+  if (front.readingController) return false
   const choice = support.override(front.key)
   if (choice !== undefined) return choice
   if (front.kind === 'steam') return false // Steam Input handles games
@@ -511,8 +519,15 @@ function updateMouse() {
 function toggleMouse() {
   if (front.kind === 'launcher' || typing) return
   if (support.neverMouse(front.key)) return // controller-only app (games): no mouse mode
-  support.setOverride(front.key, !wantMouse())
-  log(`${front.label}: mouse mode ${support.override(front.key) ? 'on' : 'off'} (your choice, remembered)`)
+  const on = !wantMouse()
+  if (front.readingController) {
+    // A game is running: don't let this choice follow the app (itch) into the next game
+    front.manual = on
+    log(`${front.label}: mouse mode ${on ? 'on' : 'off'} (your choice, this time only: a game is reading the controller)`)
+  } else {
+    support.setOverride(front.key, on)
+    log(`${front.label}: mouse mode ${on ? 'on' : 'off'} (your choice, remembered)`)
+  }
   updateMouse()
 }
 
@@ -529,16 +544,22 @@ async function checkAppStream(appId) {
   }
 }
 
-// Watch the app in front: once it opens the controller itself, mouse mode goes off.
+// Watch the app in front: while something in it has the controller open (the
+// app itself, or a game it started), mouse mode stays off; when that stops (the
+// game closed, back in itch's store) the app's usual setting applies again.
 setInterval(() => {
-  if (front.kind !== 'native' || front.usesController) return
-  if (support.appUsesController(front.appId)) {
-    log(`${front.appId} opened the controller itself; no mouse mode needed`)
+  if (front.kind !== 'native' || !front.appId) return
+  const reading = support.appUsesController(front.appId)
+  if (reading === Boolean(front.readingController)) return
+  front.readingController = reading
+  if (!reading) front.manual = undefined
+  log(`${front.label}: ${reading ? 'reading the controller itself; no mouse mode' : 'no longer reading the controller'}`)
+  if (reading && !front.usesController) {
     front.usesController = true
     support.rememberControllerApp(front.appId)
-    updateMouse()
   }
-}, 2000)
+  updateMouse()
+}, 1000)
 
 // ---------- typing into other apps ----------
 
