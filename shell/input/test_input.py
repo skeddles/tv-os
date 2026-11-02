@@ -153,7 +153,7 @@ class InputTest(unittest.TestCase):
         h.on_button(tvi.BTN_TL, True)
         h.on_hat(tvi.ABS_HAT0Y, -1)
         h.on_hat(tvi.ABS_HAT0Y, 0)
-        h.on_button(tvi.BTN_Y, True)
+        h.on_button(tvi.BTN_Y, True)  # no keyboard shortcut: it opens when a text field is clicked
         self.assertEqual(
             h.vi.log,
             [
@@ -166,7 +166,7 @@ class InputTest(unittest.TestCase):
                 ("tap", "up", False, False),
             ],
         )
-        self.assertEqual(self.events(), ["click", "keyboard"])
+        self.assertEqual(self.events(), ["click"])
 
     def test_a_and_b_follow_the_dpad_or_the_pointer(self):
         h = make_helper()

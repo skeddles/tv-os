@@ -11,8 +11,8 @@
 // Controller outside the launcher (lib/input.cjs + input/tvlauncher-input.py):
 //   Xbox button: home. Hold it ~0.7 s: toggle mouse mode for the app in front.
 //   Mouse mode turns on by itself for apps that don't read the controller
-//   (lib/appsupport.cjs). In mouse mode, Y opens the launcher's keyboard and the
-//   text is typed into the app.
+//   (lib/appsupport.cjs). Clicking a text field in another app opens the
+//   launcher's keyboard (via the accessibility bus) and the text is typed into the app.
 
 const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net } = require('electron')
 const { spawn } = require('node:child_process')
@@ -906,7 +906,6 @@ if (!app.requestSingleInstanceLock()) {
     applyDisplay()
     input.on('home', () => goHome())
     input.on('toggle-mouse', () => toggleMouse())
-    input.on('keyboard', () => startTyping())
     input.on('volume', (m) => changeVolume(m.step))
     input.on('click', () => {
       lastClick = Date.now()

@@ -463,9 +463,8 @@ class Helper:
             return
         if not down:
             return
-        if code == BTN_Y:
-            emit({"ev": "keyboard"})
-        elif code == BTN_X:
+        # Y does nothing here: the keyboard opens by itself when a text field is clicked.
+        if code == BTN_X:
             vi.tap("space")
         elif code == BTN_START:
             vi.tap("enter")
