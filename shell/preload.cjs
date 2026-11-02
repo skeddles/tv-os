@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('tv', {
   quitApp: () => ipcRenderer.invoke('tv:quitApp'),
   osUpdateStatus: () => ipcRenderer.invoke('tv:osUpdateStatus'),
   plexHome: () => ipcRenderer.invoke('tv:plexHome'),
+  plexGet: (path) => ipcRenderer.invoke('tv:plexGet', path),
   newPairingCode: () => ipcRenderer.invoke('tv:newPairingCode'),
   osUpdateCheck: () => ipcRenderer.invoke('tv:osUpdateCheck'),
   osUpdateDownload: () => ipcRenderer.invoke('tv:osUpdateDownload'),

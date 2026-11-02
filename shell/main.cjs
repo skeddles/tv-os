@@ -862,6 +862,7 @@ function registerIpc() {
   handle('tv:resumeApp', () => resumeSteam())
   handle('tv:osUpdateStatus', () => osUpdate.refresh())
   handle('tv:plexHome', () => plex.home())
+  handle('tv:plexGet', (p) => plex.get(String(p)))
   handle('tv:newPairingCode', () => newPairingCode())
   handle('tv:osUpdateCheck', () => osUpdate.check())
   handle('tv:osUpdateDownload', () => osUpdate.download())

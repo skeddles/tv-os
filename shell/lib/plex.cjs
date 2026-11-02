@@ -138,6 +138,21 @@ class Plex {
     return { continueWatching, recentlyAdded }
   }
 
+  /** Read-only access to the library for the launcher's rows (genres, collections,
+   *  sections...): GET of a /library/ or /hubs/ path, the MediaContainer back.
+   *  Metadata items also get `tile` (what a launcher tile needs). */
+  async get(p) {
+    if (typeof p !== 'string' || !/^\/(library|hubs)\/[\w\-/.?=&%:,+ ]*$/.test(p) || p.includes('..')) {
+      throw new Error('bad Plex path')
+    }
+    const r = await this.resources()
+    if (!r) return null
+    const d = await this.json(r.uri + p, r.token)
+    const mc = d.MediaContainer || {}
+    if (Array.isArray(mc.Metadata)) mc.Metadata = mc.Metadata.map((m) => ({ ...m, tile: toItem(m) }))
+    return mc
+  }
+
   /** An image from the server (path from an item), resized for a tile. */
   async image(p) {
     const r = await this.resources()
@@ -151,9 +166,20 @@ class Plex {
     const r = await this.resources()
     if (!r) throw new Error('Plex is not signed in')
     if (!/^\d+$/.test(String(ratingKey))) throw new Error('bad item')
-    const key = `/library/metadata/${ratingKey}`
-    const meta = await this.json(r.uri + key, r.token)
-    const m = (meta.MediaContainer && meta.MediaContainer.Metadata && meta.MediaContainer.Metadata[0]) || {}
+    let key = `/library/metadata/${ratingKey}`
+    const first = (d) => (d.MediaContainer && d.MediaContainer.Metadata && d.MediaContainer.Metadata[0]) || null
+    let m = first(await this.json(`${r.uri}${key}?includeOnDeck=1`, r.token)) || {}
+    // A show or season: play its next episode (Plex's "on deck"), else the first
+    // unwatched one, else the first one.
+    if (m.type === 'show' || m.type === 'season') {
+      const ep =
+        (m.OnDeck && first(m.OnDeck)) ||
+        first(await this.json(`${r.uri}${key}/allLeaves?unwatched=1&X-Plex-Container-Start=0&X-Plex-Container-Size=1`, r.token)) ||
+        first(await this.json(`${r.uri}${key}/allLeaves?X-Plex-Container-Start=0&X-Plex-Container-Size=1`, r.token))
+      if (!ep) throw new Error('no episodes')
+      key = `/library/metadata/${ep.ratingKey}`
+      m = ep
+    }
     const pq = await this.json(
       `${r.uri}/playQueues?${new URLSearchParams({
         type: 'video',
