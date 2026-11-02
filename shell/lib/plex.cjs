@@ -172,8 +172,10 @@ class Plex {
     // A show or season: play its next episode (Plex's "on deck"), else the first
     // unwatched one, else the first one.
     if (m.type === 'show' || m.type === 'season') {
+      // OnDeck comes back as { Metadata: {...} } (a single item, not a list).
+      const onDeck = m.OnDeck && m.OnDeck.Metadata
       const ep =
-        (m.OnDeck && first(m.OnDeck)) ||
+        (Array.isArray(onDeck) ? onDeck[0] : onDeck) ||
         first(await this.json(`${r.uri}${key}/allLeaves?unwatched=1&X-Plex-Container-Start=0&X-Plex-Container-Size=1`, r.token)) ||
         first(await this.json(`${r.uri}${key}/allLeaves?X-Plex-Container-Start=0&X-Plex-Container-Size=1`, r.token))
       if (!ep) throw new Error('no episodes')
