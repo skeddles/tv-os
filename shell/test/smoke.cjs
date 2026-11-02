@@ -154,6 +154,9 @@ const osu = require('../lib/osupdate.cjs')
   const movie = toItem({ ratingKey: '7', type: 'movie', title: 'Soul', year: 2020, art: '/library/metadata/7/art/2' })
   assert.equal(movie.subtitle, '2020')
   assert.equal(movie.progress, null)
+  const season = toItem({ ratingKey: 9, type: 'season', title: 'Season 1', parentTitle: 'Severance', art: '/library/metadata/8/art/3' })
+  assert.equal(season.title, 'Severance')
+  assert.equal(season.subtitle, 'Season 1')
 }
 
 console.log('smoke tests passed')

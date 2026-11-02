@@ -35,16 +35,19 @@ function parseIni(text) {
 /** A Plex metadata item -> what a launcher tile needs. */
 function toItem(m) {
   const episode = m.type === 'episode'
-  const art = episode ? m.thumb || m.grandparentArt || m.art : m.art || m.thumb
+  const season = m.type === 'season' // "Recently added" lists new seasons
+  const art = episode ? m.thumb || m.grandparentArt || m.art : m.art || m.parentArt || m.thumb
   return {
     ratingKey: String(m.ratingKey),
     type: m.type,
-    title: episode ? m.grandparentTitle || m.title : m.title,
+    title: episode ? m.grandparentTitle || m.title : season ? m.parentTitle || m.title : m.title,
     subtitle: episode
       ? `S${m.parentIndex ?? '?'}E${m.index ?? '?'} · ${m.title}`
-      : m.year
-        ? String(m.year)
-        : '',
+      : season
+        ? m.title
+        : m.year
+          ? String(m.year)
+          : '',
     image: art ? `tvapp://plex-image/?path=${encodeURIComponent(art)}` : null,
     progress: m.viewOffset && m.duration ? Math.min(100, Math.round((m.viewOffset / m.duration) * 100)) : null,
   }
