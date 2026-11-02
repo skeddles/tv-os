@@ -29,6 +29,7 @@ const { InputHelper } = require('./lib/input.cjs')
 const support = require('./lib/appsupport.cjs')
 const steamproc = require('./lib/steamproc.cjs')
 const { OsUpdate } = require('./lib/osupdate.cjs')
+const pointerPrefs = require('./lib/pointerprefs.cjs')
 const display = require('./lib/display.cjs')
 const { startControlServer } = require('./lib/control.cjs')
 
@@ -70,6 +71,8 @@ let front = { kind: 'launcher' }
 let typing = null // { front, webLayer } while the keyboard is up for another app
 let mouseOn = false
 let scale = display.loadScale()
+let pointer = pointerPrefs.load()
+process.env.XCURSOR_SIZE = String(pointer.size) // apps started from here inherit it
 const input = new InputHelper(log)
 const a11y = new InputHelper(log, 'tvlauncher-a11y.py')
 let lastClick = 0 // when A was last pressed in mouse mode
@@ -808,6 +811,13 @@ function registerIpc() {
     return { scale }
   })
   handle('tv:resetInputPrefs', () => support.clearOverrides())
+  handle('tv:getPointer', () => ({ ...pointer, speeds: pointerPrefs.SPEEDS, sizes: pointerPrefs.SIZES }))
+  handle('tv:setPointer', (patch) => {
+    pointer = pointerPrefs.save(patch)
+    process.env.XCURSOR_SIZE = String(pointer.size)
+    input.send({ cmd: 'speed', factor: pointer.speed })
+    return { ...pointer, speeds: pointerPrefs.SPEEDS, sizes: pointerPrefs.SIZES }
+  })
   handle('tv:resumeApp', () => resumeSteam())
   handle('tv:osUpdateStatus', () => osUpdate.refresh())
   handle('tv:newPairingCode', () => newPairingCode())
@@ -837,6 +847,8 @@ if (!app.requestSingleInstanceLock()) {
     // keyboard device vanished (crash, kill), Cage otherwise gives the new window
     // keyboard modifiers without a keymap and Electron crashes (xkb_state_update_mask).
     input.on('controller', (m) => log(`controller ${m.connected ? `connected: ${m.name}` : 'disconnected'}`))
+    // Every (re)start of the helper gets the saved pointer speed.
+    input.on('ready', () => input.send({ cmd: 'speed', factor: pointer.speed }))
     input.start()
     await new Promise((resolve) => {
       const t = setTimeout(resolve, 3000)

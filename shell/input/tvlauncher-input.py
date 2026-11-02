@@ -337,6 +337,7 @@ class Helper:
         self.held: set[int] = set()  # virtual buttons/keys held down
         self.view_down = False
         self.view_chord = False  # View was used for a volume chord this press
+        self.speed_factor = 1.0  # Settings > Pointer speed
         # D-pad vs pointer: whichever was used last decides what A and B do in
         # mouse mode (Enter/Back on the highlighted item, or click/right-click
         # at the pointer). Chrome's spatial navigation moves a highlight with
@@ -506,7 +507,7 @@ class Helper:
             rx += shape(pad.axes.get(ABS_RX, 0.0))
             ry += shape(pad.axes.get(ABS_RY, 0.0))
             rt = max(rt, pad.axes.get(ABS_RZ, 0.0))
-        speed = POINTER_SPEED * (SLOW_FACTOR if rt > 0.3 else 1.0) * dt
+        speed = POINTER_SPEED * self.speed_factor * (SLOW_FACTOR if rt > 0.3 else 1.0) * dt
         moves = [lx * speed, ly * speed, -ry * SCROLL_SPEED * dt, rx * SCROLL_SPEED * dt]
         out = []
         for i, m in enumerate(moves):
@@ -540,6 +541,11 @@ class Helper:
         cmd = msg.get("cmd")
         if cmd == "mouse":
             self.set_mouse(bool(msg.get("on")))
+        elif cmd == "speed":
+            try:
+                self.speed_factor = max(0.25, min(float(msg.get("factor", 1.0)), 3.0))
+            except (TypeError, ValueError):
+                pass
         elif cmd == "park":
             self.park()
         elif cmd == "center":

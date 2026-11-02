@@ -62,6 +62,7 @@ def make_helper():
     h.held = set()
     h.view_down = False
     h.view_chord = False
+    h.speed_factor = 1.0
     h.last_dpad = 0.0
     h.last_pointer = 0.0
     h.key_presses = set()
@@ -226,6 +227,20 @@ class InputTest(unittest.TestCase):
         slow = h.vi.log[-1][1]
         self.assertAlmostEqual(fast, tvi.POINTER_SPEED * 0.1, delta=2)
         self.assertLess(slow, fast / 2)
+
+    def test_speed_command_scales_the_pointer(self):
+        h = make_helper()
+        pad = FakePad()
+        h.pads = {"event99": pad}
+        h.set_mouse(True)
+        pad.axes[tvi.ABS_X] = 1.0
+        h.tick(0.1)
+        normal = h.vi.log[-1][1]
+        h.on_command({"cmd": "speed", "factor": 2})
+        h.tick(0.1)
+        self.assertAlmostEqual(h.vi.log[-1][1], normal * 2, delta=2)
+        h.on_command({"cmd": "speed", "factor": "nonsense"})
+        self.assertEqual(h.speed_factor, 2)
 
     def test_right_stick_scrolls_with_notches(self):
         h = make_helper()

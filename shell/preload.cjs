@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('tv', {
   getDisplay: () => ipcRenderer.invoke('tv:getDisplay'),
   setDisplay: (opts) => ipcRenderer.invoke('tv:setDisplay', opts),
   resetInputPrefs: () => ipcRenderer.invoke('tv:resetInputPrefs'),
+  getPointer: () => ipcRenderer.invoke('tv:getPointer'),
+  setPointer: (patch) => ipcRenderer.invoke('tv:setPointer', patch),
   resumeApp: () => ipcRenderer.invoke('tv:resumeApp'),
   quitApp: () => ipcRenderer.invoke('tv:quitApp'),
   osUpdateStatus: () => ipcRenderer.invoke('tv:osUpdateStatus'),
