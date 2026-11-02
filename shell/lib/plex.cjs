@@ -7,7 +7,7 @@
 //
 // Starting an item uses Plex's remote control ("Plex Companion"): a play queue
 // on the server, then playMedia sent through the server to the HTPC player
-// (tested Nov 2026: Plex HTPC 1.70 resumed an episode this way).
+// (tested Nov 2026 with Plex HTPC 1.70), then seekTo to resume where you were.
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -15,6 +15,7 @@ const path = require('node:path')
 const INI = path.join(os.homedir(), '.var/app/tv.plex.PlexHTPC/data/plex/plex.ini')
 const CLIENT_ID = 'tvlauncher-shell'
 const RESOURCES_TTL = 10 * 60 * 1000
+const SEEK_DELAY_MS = 6000 // after playMedia, once the video has started
 
 /** PlexAuthToken and ClientID from the [web] section of Plex HTPC's plex.ini. */
 function parseIni(text) {
@@ -178,10 +179,20 @@ class Plex {
       commandID: String(Date.now() % 100000),
       type: 'video',
     })
-    await this.json(`${r.uri}/player/playback/playMedia?${params}`, r.token, {
-      headers: { 'X-Plex-Target-Client-Identifier': r.playerId },
-      timeout: 10000,
-    })
+    const target = { 'X-Plex-Target-Client-Identifier': r.playerId }
+    await this.json(`${r.uri}/player/playback/playMedia?${params}`, r.token, { headers: target, timeout: 10000 })
+    // Plex HTPC seemed to start from the beginning despite `offset` (reported on
+    // the TV), while a separate seekTo once playback has started put it at the
+    // right spot (tested: 13:27). So resume with seekTo as well.
+    const offset = Number(m.viewOffset || 0)
+    if (offset > 0) {
+      setTimeout(() => {
+        const q = new URLSearchParams({ offset: String(offset), type: 'video', commandID: String((Date.now() + 1) % 100000) })
+        this.json(`${r.uri}/player/playback/seekTo?${q}`, r.token, { headers: target, timeout: 10000 }).catch((e) =>
+          this.log(`plex: resume seek failed: ${e.message}`),
+        )
+      }, SEEK_DELAY_MS)
+    }
   }
 }
 
