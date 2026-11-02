@@ -1,6 +1,6 @@
 // Runs the controller helper (input/tvlauncher-input.py) and restarts it if it
 // stops. The helper reads the controller directly, so it works whichever app is
-// in front: Xbox button (home / hold to toggle mouse mode), mouse mode, typing.
+// in front: Xbox button (home), View + X (mouse mode), View + Y (keyboard), typing.
 const { spawn } = require('node:child_process')
 const { EventEmitter } = require('node:events')
 const path = require('node:path')

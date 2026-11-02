@@ -123,14 +123,30 @@ class InputTest(unittest.TestCase):
         h.on_button(tvi.BTN_MODE, False)
         self.assertEqual(self.events(), ["home"])
 
-    def test_long_guide_press_toggles_and_is_not_home(self):
+    def test_long_guide_press_is_still_home(self):
         h = make_helper()
         h.on_button(tvi.BTN_MODE, True)
-        h.guide_down_at -= tvi.HOLD_TOGGLE + 0.05
+        h.guide_down_at -= 2.0
         h.tick(0.01)
-        h.tick(0.01)  # fires once
         h.on_button(tvi.BTN_MODE, False)
-        self.assertEqual(self.events(), ["toggle-mouse"])
+        self.assertEqual(self.events(), ["home"])
+
+    def test_view_chords(self):
+        for mouse in (False, True):
+            h = make_helper()
+            h.set_mouse(mouse)
+            self.out.truncate(0)
+            self.out.seek(0)
+            h.vi.log.clear()
+            h.on_button(tvi.BTN_SELECT, True)
+            h.on_button(tvi.BTN_Y, True)
+            h.on_button(tvi.BTN_Y, False)
+            h.on_button(tvi.BTN_X, True)
+            h.on_button(tvi.BTN_X, False)
+            h.on_button(tvi.BTN_SELECT, False)  # a chord: no Escape
+            self.assertEqual(self.events(), ["keyboard", "toggle-mouse"])
+            self.assertNotIn(("tap", "esc", False, False), h.vi.log)
+            self.assertNotIn(("tap", "space", False, False), h.vi.log)
 
     def test_buttons_do_nothing_when_mouse_mode_off(self):
         h = make_helper()

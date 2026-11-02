@@ -2,7 +2,7 @@
 // can turn on only where it's needed.
 //
 // In order:
-//   1. Your choice for that app (hold the Xbox button to toggle; remembered).
+//   1. Your choice for that app (View + X to toggle; remembered).
 //   2. Apps known to work with a controller (same list the App Store uses).
 //   3. The app's Flathub listing says it supports a gamepad.
 //   4. Watching the app: if any of its processes opens the controller's device
@@ -29,7 +29,7 @@ const KNOWN_CONTROLLER_APPS = new Set([
 ])
 
 // Apps that never need mouse mode: games are played with the controller and
-// there's nothing to point at. Holding the Xbox button acts like a press there, and
+// there's nothing to point at. View + X does nothing there, and
 // an old remembered choice is ignored.
 const NEVER_MOUSE_APPS = new Set(['org.libretro.RetroArch'])
 

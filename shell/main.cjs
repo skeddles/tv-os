@@ -9,7 +9,9 @@
 // launcher" is just app.exit().
 //
 // Controller outside the launcher (lib/input.cjs + input/tvlauncher-input.py):
-//   Xbox button: home. Hold it ~0.7 s: toggle mouse mode for the app in front.
+//   Xbox button: home. Shortcuts anywhere are View + a button: View + D-pad
+//   up/down = volume, View + X = mouse mode on/off for the app in front,
+//   View + Y = the launcher's keyboard, typed into the app in front.
 //   Mouse mode turns on by itself for apps that don't read the controller
 //   (lib/appsupport.cjs). Clicking a text field in another app opens the
 //   launcher's keyboard (via the accessibility bus) and the text is typed into the app.
@@ -503,14 +505,10 @@ function updateMouse() {
   send({ type: 'mouse-mode', on, label: front.label || null })
 }
 
-/** Hold the Xbox button: flip mouse mode for the app in front and remember it. */
+/** View + X: flip mouse mode for the app in front and remember it. */
 function toggleMouse() {
   if (front.kind === 'launcher' || typing) return
-  if (support.neverMouse(front.key)) {
-    // Controller-only app (games): no mouse mode, so a long press is just a press
-    goHome()
-    return
-  }
+  if (support.neverMouse(front.key)) return // controller-only app (games): no mouse mode
   support.setOverride(front.key, !wantMouse())
   log(`${front.label}: mouse mode ${support.override(front.key) ? 'on' : 'off'} (your choice, remembered)`)
   updateMouse()
@@ -913,6 +911,7 @@ if (!app.requestSingleInstanceLock()) {
     applyDisplay()
     input.on('home', () => goHome())
     input.on('toggle-mouse', () => toggleMouse())
+    input.on('keyboard', () => startTyping())
     input.on('volume', (m) => changeVolume(m.step))
     input.on('click', () => {
       lastClick = Date.now()

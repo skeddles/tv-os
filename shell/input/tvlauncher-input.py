@@ -16,8 +16,11 @@ Talks to the Electron shell with JSON lines:
                                                 open the keyboard on text fields)
                      {"ev": "home"}             Xbox button, short press
                      {"ev": "volume", "step": 1}  View held + D-pad up/down (anywhere)
-                     {"ev": "toggle-mouse"}     Xbox button held ~0.7 s
-                     {"ev": "keyboard"}         Y, while in mouse mode
+                     {"ev": "toggle-mouse"}     View held + X (anywhere)
+                     {"ev": "keyboard"}         View held + Y (anywhere)
+
+Shortcuts that work everywhere are all View + another button, so they can't be
+pressed by accident (in a game, Y or a long Xbox press is just a game button).
                      {"ev": "controller", "name": "...", "connected": true}
 
 Mouse mode (Xbox One pad, xpad driver):
@@ -114,7 +117,6 @@ DEADZONE = 0.15
 POINTER_SPEED = 1300.0  # px per second at full tilt
 SLOW_FACTOR = 0.3  # while RT is held
 SCROLL_SPEED = 2400.0  # hi-res wheel units per second at full tilt (120 = one notch)
-HOLD_TOGGLE = 0.7  # seconds holding the Xbox button to toggle mouse mode
 TICK = 1 / 120
 
 
@@ -331,7 +333,6 @@ class Helper:
         self.mouse = False
         self.pads: dict[str, Pad] = {}
         self.guide_down_at: float | None = None
-        self.guide_toggled = False
         self.frac = [0.0, 0.0, 0.0, 0.0]  # x, y, wheel, hwheel leftovers
         self.notch_acc = [0.0, 0.0]
         self.held: set[int] = set()  # virtual buttons/keys held down
@@ -425,11 +426,16 @@ class Helper:
         if code == BTN_MODE:
             if down:
                 self.guide_down_at = time.monotonic()
-                self.guide_toggled = False
             else:
-                if self.guide_down_at is not None and not self.guide_toggled:
+                if self.guide_down_at is not None:
                     emit({"ev": "home"})
                 self.guide_down_at = None
+            return
+        # View held + Y: keyboard for the app in front; View held + X: mouse mode on/off
+        if self.view_down and code in (BTN_X, BTN_Y):
+            if down:
+                self.view_chord = True
+                emit({"ev": "keyboard" if code == BTN_Y else "toggle-mouse"})
             return
         if code == BTN_SELECT:
             if down:
@@ -463,7 +469,7 @@ class Helper:
             return
         if not down:
             return
-        # Y does nothing here: the keyboard opens by itself when a text field is clicked.
+        # Y alone does nothing: the keyboard opens when a text field is clicked (or View + Y).
         if code == BTN_X:
             vi.tap("space")
         elif code == BTN_START:
@@ -493,10 +499,6 @@ class Helper:
             self.vi.tap("down" if value > 0 else "up")
 
     def tick(self, dt: float) -> None:
-        # Xbox button held long enough: toggle (fires while still held)
-        if self.guide_down_at is not None and not self.guide_toggled and time.monotonic() - self.guide_down_at >= HOLD_TOGGLE:
-            self.guide_toggled = True
-            emit({"ev": "toggle-mouse"})
         if not (self.mouse and self.vi) or not self.pads:
             return
         lx = ly = rx = ry = rt = 0.0

@@ -65,6 +65,9 @@ commands, and the latest build here showing a green check under
 
 3. Plug in the Xbox controller. D-pad/stick moves, **A** opens, **B** goes back,
    **Y** searches. The **Xbox button** closes the app you're in and returns home.
+   Shortcuts that work in any app all start with holding **View** (the small
+   left button): View + D-pad up/down = volume, View + X = mouse mode on/off,
+   View + Y = on-screen keyboard.
 
 ### Getting back to the KDE desktop
 
