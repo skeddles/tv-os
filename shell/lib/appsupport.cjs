@@ -28,6 +28,16 @@ const KNOWN_CONTROLLER_APPS = new Set([
   'net.kuribo64.melonDS',
 ])
 
+// Apps that never need mouse mode: games are played with the controller and
+// there's nothing to point at. Holding the Xbox button acts like a press there, and
+// an old remembered choice is ignored.
+const NEVER_MOUSE_APPS = new Set(['org.libretro.RetroArch'])
+
+/** True when mouse mode must stay off for this app (front key like 'flatpak:<id>'). */
+function neverMouse(key) {
+  return typeof key === 'string' && NEVER_MOUSE_APPS.has(key.replace(/^flatpak:/, ''))
+}
+
 function loadPrefs() {
   try {
     const p = JSON.parse(fs.readFileSync(PREFS, 'utf8'))
@@ -202,4 +212,6 @@ module.exports = {
   isBrowser,
   flatpakPids,
   KNOWN_CONTROLLER_APPS,
+  NEVER_MOUSE_APPS,
+  neverMouse,
 }

@@ -485,6 +485,7 @@ function setFront(f) {
 
 function wantMouse() {
   if (typing || front.kind === 'launcher') return false
+  if (support.neverMouse(front.key)) return false
   const choice = support.override(front.key)
   if (choice !== undefined) return choice
   if (front.kind === 'steam') return false // Steam Input handles games
@@ -505,6 +506,11 @@ function updateMouse() {
 /** Hold the Xbox button: flip mouse mode for the app in front and remember it. */
 function toggleMouse() {
   if (front.kind === 'launcher' || typing) return
+  if (support.neverMouse(front.key)) {
+    // Controller-only app (games): no mouse mode, so a long press is just a press
+    goHome()
+    return
+  }
   support.setOverride(front.key, !wantMouse())
   log(`${front.label}: mouse mode ${support.override(front.key) ? 'on' : 'off'} (your choice, remembered)`)
   updateMouse()
@@ -711,6 +717,7 @@ async function handleControl(req) {
     }
     case 'mouse': {
       if (front.kind === 'launcher') return { ok: false, error: 'mouse mode is only for apps' }
+      if (support.neverMouse(front.key) && req.on) return { ok: false, error: `${front.label} is played with the controller; mouse mode stays off` }
       support.setOverride(front.key, Boolean(req.on))
       updateMouse()
       return { ok: true, front: frontInfo() }

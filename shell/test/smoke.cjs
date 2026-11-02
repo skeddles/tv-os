@@ -138,6 +138,10 @@ const osu = require('../lib/osupdate.cjs')
   ]
   assert.equal(pickMain(firefox).pid, 10)
   assert.equal(pickMain([{ pid: 1, comm: 'bwrap', cmdline: 'bwrap', start: 1 }]), null)
+  const { neverMouse } = require('../lib/appsupport.cjs')
+  assert.equal(neverMouse('flatpak:org.libretro.RetroArch'), true)
+  assert.equal(neverMouse('flatpak:org.mozilla.firefox'), false)
+  assert.equal(neverMouse(undefined), false)
 }
 
 // Plex: credentials from plex.ini and items for tiles
