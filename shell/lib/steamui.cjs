@@ -53,4 +53,20 @@ function hideDesktopWindow() {
   }
 }
 
-module.exports = { bigPictureOpen, desktopWindows, hideDesktopWindow }
+/** True when any X window big enough to be an app is showing (Steam, a game,
+ *  a dialog). Tiny helper windows Steam and others keep around don't count.
+ *  (xwininfo, not `xdotool search`: that missed Big Picture's window on the TV.) */
+function otherWindowShowing(text = tree()) {
+  for (const m of text.matchAll(/^\s*(0x[0-9a-f]+) .*?\)\s+(\d+)x(\d+)[+-]/gim)) {
+    if (Number(m[2]) < 300 || Number(m[3]) < 200) continue
+    try {
+      const info = execFileSync('xwininfo', ['-id', m[1]], { env: env(), encoding: 'utf8', timeout: 3000 })
+      if (/Map State:\s+IsViewable/.test(info)) return true
+    } catch {
+      /* gone */
+    }
+  }
+  return false
+}
+
+module.exports = { bigPictureOpen, desktopWindows, hideDesktopWindow, otherWindowShowing }

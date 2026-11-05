@@ -201,6 +201,8 @@ const osu = require('../lib/osupdate.cjs')
   assert.deepEqual(steamui.desktopWindows(tree), ['0x20000c2'])
   const bp = tree + '\n     0x200009d "Steam Big Picture Mode": ("steamwebhelper" "steam")  960x540+0+0  +0+0'
   assert.equal(steamui.bigPictureOpen(bp), true)
+  // no X server here: every window looks gone, so nothing is showing
+  assert.equal(steamui.otherWindowShowing(bp), false)
 }
 
 console.log('smoke tests passed')

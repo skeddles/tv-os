@@ -220,6 +220,13 @@ function createWindow() {
     log(`loaded ${win.webContents.getURL()} (${uiSource})`)
     applyZoom()
   })
+  win.on('focus', () => {
+    launcherFocused = true
+    refocusTried = false
+  })
+  win.on('blur', () => {
+    launcherFocused = false
+  })
   win.webContents.on('console-message', (e) => {
     if (e.level === 'error') log(`page error: ${e.message}`)
   })
@@ -376,7 +383,28 @@ setTimeout(() => {
 }, STEAM_BACKGROUND_DELAY_MS)
 // Steam's desktop window is never wanted on the TV (it shows when Big Picture
 // closes, and sometimes on its own): keep it hidden.
-setInterval(() => steamui.hideDesktopWindow(), 3000)
+setInterval(() => {
+  steamui.hideDesktopWindow()
+  checkLauncherFocus()
+}, 3000)
+
+// The launcher ignores the controller while another window has the focus (the
+// launcher page pauses itself on blur). When a window the launcher didn't open
+// goes away (Big Picture opened by Steam itself, a dialog), Cage doesn't give
+// the focus back, and the launcher stayed deaf until the Xbox button (seen on
+// the TV, Nov 2026). So: launcher in front, unfocused, and nothing else
+// showing -> take the focus back (once per time it loses it).
+let launcherFocused = true
+let refocusTried = false
+function checkLauncherFocus() {
+  if (!win || win.isDestroyed() || launcherFocused || refocusTried) return
+  if (front.kind !== 'launcher' || typing || steamApp) return
+  if (steamui.otherWindowShowing()) return
+  refocusTried = true
+  log('launcher lost the focus with nothing in front of it; taking it back')
+  raiseLauncher()
+  send({ type: 'home' }) // the page: the controller is for the launcher again
+}
 
 function startSteam(appId, label) {
   steamApp = { appId, label, started: Date.now(), seen: false, bigPicture: false }
