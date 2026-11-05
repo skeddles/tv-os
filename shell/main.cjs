@@ -75,7 +75,10 @@ const osUpdate = new OsUpdate((state) => send({ type: 'os-update', state }), (m)
 let front = { kind: 'launcher' }
 let typing = null // { front, webLayer } while the keyboard is up for another app
 let mouseOn = false
-let scale = display.loadScale()
+let scale = display.loadScale() // the App size setting
+// What the screen is set to now: `scale`, or 1 while a game runs that would
+// otherwise only see part of the screen (see gameScreen below).
+let appliedScale = null
 let pointer = pointerPrefs.load()
 process.env.XCURSOR_SIZE = String(pointer.size) // apps started from here inherit it
 const input = new InputHelper(log)
@@ -418,6 +421,7 @@ function watchSteam() {
   // Steam is asking something before the game starts (in Big Picture): wait.
   if (s.appId && !s.seen && steamui.bigPictureOpen()) return
   steamApp = null
+  updateGameScreen()
   log(`${s.label} ${s.seen ? 'closed' : 'never started'}`)
   if (s.appId && s.bigPicture) closeBigPicture()
   send({ type: 'steam-closed', label: s.label })
@@ -449,6 +453,7 @@ function resumeSteam() {
   // (A game Steam is still asking about counts: its prompt is in Big Picture.)
   if (!s || !(steamRunning(s) || (s.appId && steamui.bigPictureOpen()))) {
     steamApp = null
+    updateGameScreen()
     return false
   }
   setFront({ kind: 'steam', key: `steam:${s.appId || 'bigpicture'}`, label: s.label, appId: s.appId })
@@ -546,6 +551,23 @@ function showLauncher() {
 function setFront(f) {
   front = f
   updateMouse()
+  updateGameScreen()
+}
+
+/** Games through Steam (Proton) and itch games run under Xwayland, which at the
+ *  App size scale (200%) offers them only 960x540: Sonic Generations' settings
+ *  then didn't match ("does not match your current hardware") and games render
+ *  at half resolution. So the screen goes to scale 1 while one is open (or left
+ *  running behind the launcher), and back to the App size after. The launcher
+ *  cancels the scale with its zoom, so it looks the same either way. */
+function gameScreen() {
+  return Boolean(steamApp) || front.kind === 'steam' || String(front.key || '').startsWith('itch-game:')
+}
+
+function updateGameScreen() {
+  const want = gameScreen() ? 1 : scale
+  if (want === appliedScale) return
+  applyDisplay(want).catch((e) => log(`display: ${e.message}`))
 }
 
 function wantMouse() {
@@ -812,11 +834,12 @@ async function handleControl(req) {
 // ---------- display ----------
 
 function applyZoom() {
-  if (win && !win.isDestroyed()) win.webContents.setZoomFactor(1 / scale)
+  if (win && !win.isDestroyed()) win.webContents.setZoomFactor(1 / (appliedScale || scale))
 }
 
-async function applyDisplay() {
-  const r = await display.apply(scale, log)
+async function applyDisplay(want = gameScreen() ? 1 : scale) {
+  appliedScale = want
+  const r = await display.apply(want, log)
   applyZoom()
   return r
 }
