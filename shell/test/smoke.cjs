@@ -205,4 +205,26 @@ const osu = require('../lib/osupdate.cjs')
   assert.equal(steamui.otherWindowShowing(bp), false)
 }
 
+// ---- apps start without the launcher's open files ----
+{
+  const { CLOSE_AND_EXEC } = require('../lib/cleanspawn.cjs')
+  const { spawnSync } = require('node:child_process')
+  // fd 7 is open (and not close-on-exec) in the shell that starts it; the app must not get it
+  const r = spawnSync('sh', ['-c', `exec 7</dev/null; python3 -c '${CLOSE_AND_EXEC.replace(/'/g, `'"'"'`)}' sh -c 'ls /proc/$$/fd'`], {
+    encoding: 'utf8',
+  })
+  const fds = r.stdout.trim().split(/\s+/).map(Number)
+  assert.ok(!fds.includes(7), `fd 7 leaked: ${r.stdout} ${r.stderr}`)
+  assert.ok(fds.includes(1))
+}
+
+// ---- the app's own programs vs games it runs ----
+{
+  const { isOwnProgram } = require('../lib/appsupport.cjs')
+  assert.equal(isOwnProgram('/app/bin/itch\0'), true)
+  assert.equal(isOwnProgram('/bin/sh\0/app/bin/itch-run\0'), true)
+  assert.equal(isOwnProgram('Z:\\home\\me\\.var\\app\\io.itch.itch\\config\\itch\\apps\\g\\G.exe\0'), false)
+  assert.equal(isOwnProgram('/home/me/.var/app/io.itch.itch/config/itch/apps/g/G.x86_64\0'), false)
+}
+
 console.log('smoke tests passed')

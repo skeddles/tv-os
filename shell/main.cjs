@@ -31,6 +31,7 @@ const { InputHelper } = require('./lib/input.cjs')
 const support = require('./lib/appsupport.cjs')
 const steamproc = require('./lib/steamproc.cjs')
 const steamui = require('./lib/steamui.cjs')
+const { spawnClean } = require('./lib/cleanspawn.cjs')
 const { OsUpdate } = require('./lib/osupdate.cjs')
 const pointerPrefs = require('./lib/pointerprefs.cjs')
 const { Plex } = require('./lib/plex.cjs')
@@ -311,7 +312,7 @@ function hideWeb() {
 /** opts.key / opts.usesController: for a game run inside another app's Flatpak
  *  (itch games), so it gets its own mouse mode setting. */
 function spawnApp(cmd, args, label, appId, opts = {}) {
-  const child = spawn(cmd, args, { detached: true, stdio: 'ignore', env: process.env })
+  const child = spawnClean(cmd, args, { detached: true, stdio: 'ignore', env: process.env })
   child.unref()
   const app = { child, label, appId, started: Date.now(), seen: false, starterExited: false }
   native = app
@@ -364,7 +365,7 @@ setInterval(() => {
 // computer"...) work with the controller; see lib/steamui.cjs.
 
 function steamSpawn(args) {
-  spawn('steam', args, { detached: true, stdio: 'ignore' }).unref()
+  spawnClean('steam', args, { detached: true, stdio: 'ignore' }).unref()
 }
 
 const STEAM_BACKGROUND_DELAY_MS = 30_000 // after the launcher is up
@@ -603,9 +604,8 @@ function wantMouse() {
   if (support.neverMouse(front.key)) return false
   // View + X while a game is reading the controller: for this time only
   if (front.manual !== undefined) return front.manual
-  // Something in the app is reading the controller right now (a game, including
-  // one started from inside another app such as itch): no mouse mode, whatever
-  // was chosen for the app before. Mouse mode turns X into Space and A into a
+  // A game started from inside the app (such as itch) is reading the controller
+  // right now: no mouse mode, whatever was chosen for the app. Mouse mode turns X into Space and A into a
   // click, and a game reading the controller would get both (seen with a Godot
   // game launched through itch: X also pressed Space, 100 of 104 presses).
   if (front.readingController) return false
@@ -655,20 +655,34 @@ async function checkAppStream(appId) {
   }
 }
 
-// Watch the app in front: while something in it has the controller open (the
-// app itself, or a game it started), mouse mode stays off; when that stops (the
-// game closed, back in itch's store) the app's usual setting applies again.
+// Watch the app in front. Two cases:
+// - the app's own program opens the controller: it supports one, so mouse mode
+//   is off by default (but your View + X choice for the app still wins);
+// - another program in the app's sandbox does (a game the itch app started):
+//   mouse mode is off while it runs, whatever was chosen for the app, and the
+//   app's usual setting comes back when the game closes.
+// (The itch app itself, being Chromium-based, opens the controller too; treating
+// that like a game took away the mouse needed to use it, Nov 2026.)
 setInterval(() => {
   if (front.kind !== 'native' || !front.appId) return
-  const reading = support.appUsesController(front.appId)
-  if (reading === Boolean(front.readingController)) return
-  front.readingController = reading
-  if (!reading) front.manual = undefined
-  log(`${front.label}: ${reading ? 'reading the controller itself; no mouse mode' : 'no longer reading the controller'}`)
-  if (reading && !front.usesController) {
+  const readers = support.controllerReaders(front.appId)
+  if (readers.length && !front.usesController) {
+    log(`${front.label} opened the controller itself; no mouse mode needed`)
     front.usesController = true
     support.rememberControllerApp(front.appId)
+    updateMouse()
   }
+  const gameRunning = readers.some((pid) => {
+    try {
+      return !support.isOwnProgram(fs.readFileSync(`/proc/${pid}/cmdline`, 'latin1'))
+    } catch {
+      return false
+    }
+  })
+  if (gameRunning === Boolean(front.readingController)) return
+  front.readingController = gameRunning
+  if (!gameRunning) front.manual = undefined
+  log(`${front.label}: ${gameRunning ? 'a game in it is reading the controller; no mouse mode' : 'no game reading the controller any more'}`)
   updateMouse()
 }, 1000)
 

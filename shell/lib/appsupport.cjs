@@ -177,11 +177,12 @@ function flatpakMainPid(appId) {
   return main ? main.pid : null
 }
 
-/** True if any process of the app has a controller device open. */
-function appUsesController(appId) {
-  if (isBrowser(appId)) return false
+/** PIDs of the app's processes that have a controller device open. */
+function controllerReaders(appId) {
+  if (isBrowser(appId)) return []
   const nodes = controllerNodes()
-  if (nodes.size === 0) return false
+  if (nodes.size === 0) return []
+  const out = []
   for (const pid of flatpakPids(appId)) {
     let fds = []
     try {
@@ -191,13 +192,29 @@ function appUsesController(appId) {
     }
     for (const fd of fds) {
       try {
-        if (nodes.has(fs.readlinkSync(`/proc/${pid}/fd/${fd}`))) return true
+        if (nodes.has(fs.readlinkSync(`/proc/${pid}/fd/${fd}`))) {
+          out.push(pid)
+          break
+        }
       } catch {
         /* closed meanwhile */
       }
     }
   }
-  return false
+  return out
+}
+
+/** True for the app's own programs (installed in the Flatpak, /app/...), as
+ *  opposed to things it runs from your files (games the itch app installed,
+ *  Windows games through Wine: "Z:\\...\\game.exe"). */
+function isOwnProgram(cmdline) {
+  const args = cmdline.split('\0').filter(Boolean)
+  return args.slice(0, 2).some((a) => a.startsWith('/app/'))
+}
+
+/** True if any process of the app has a controller device open. */
+function appUsesController(appId) {
+  return controllerReaders(appId).length > 0
 }
 
 module.exports = {
@@ -209,6 +226,8 @@ module.exports = {
   rememberControllerApp,
   knownControllerApp,
   appUsesController,
+  controllerReaders,
+  isOwnProgram,
   isBrowser,
   flatpakPids,
   KNOWN_CONTROLLER_APPS,
