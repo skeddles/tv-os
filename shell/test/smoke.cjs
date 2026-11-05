@@ -189,4 +189,18 @@ const osu = require('../lib/osupdate.cjs')
   fs.rmSync(tmp, { recursive: true })
 }
 
+// ---- Steam's windows (xwininfo -root -tree output, as seen on the TV) ----
+{
+  const steamui = require('../lib/steamui.cjs')
+  const tree = `
+     0xc0001e "Steam": ("steam" "steam")  200x200+0+0  +0+0
+     0x1600003 "steamwebhelper": ("steamwebhelper" "Steamwebhelper")  200x200+0+0  +0+0
+     0x20000c2 "Steam": ("steamwebhelper" "steam")  960x540+0+0  +0+0
+     0x200011f (has no name): ("steamwebhelper" "steam")  118x264+370+66  +370+66`
+  assert.equal(steamui.bigPictureOpen(tree), false)
+  assert.deepEqual(steamui.desktopWindows(tree), ['0x20000c2'])
+  const bp = tree + '\n     0x200009d "Steam Big Picture Mode": ("steamwebhelper" "steam")  960x540+0+0  +0+0'
+  assert.equal(steamui.bigPictureOpen(bp), true)
+}
+
 console.log('smoke tests passed')

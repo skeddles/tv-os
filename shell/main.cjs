@@ -30,6 +30,7 @@ const store = require('./lib/store.cjs')
 const { InputHelper } = require('./lib/input.cjs')
 const support = require('./lib/appsupport.cjs')
 const steamproc = require('./lib/steamproc.cjs')
+const steamui = require('./lib/steamui.cjs')
 const { OsUpdate } = require('./lib/osupdate.cjs')
 const pointerPrefs = require('./lib/pointerprefs.cjs')
 const { Plex } = require('./lib/plex.cjs')
@@ -63,7 +64,7 @@ let visibleLayer = null
 /** The native app currently in front, if we can close it. */
 let native = null // { child, label, appId }
 // The Steam game (or Big Picture, appId null) last opened from the launcher.
-let steamApp = null // { appId, label, started, seen }
+let steamApp = null // { appId, label, started, seen, bigPicture }
 // System image updates (Settings > System update); events go to the launcher.
 const osUpdate = new OsUpdate((state) => send({ type: 'os-update', state }), (m) => log(m))
 
@@ -346,15 +347,63 @@ setInterval(() => {
 }, 1500)
 
 // ---------- Steam ----------
+//
+// Steam runs all the time, quietly in the background, so downloads finish
+// (it only downloads while it runs). Games start with Big Picture open, where
+// Steam's prompts before a game (launch options, "playing on another
+// computer"...) work with the controller; see lib/steamui.cjs.
+
+function steamSpawn(args) {
+  spawn('steam', args, { detached: true, stdio: 'ignore' }).unref()
+}
+
+const STEAM_BACKGROUND_DELAY_MS = 30_000 // after the launcher is up
+let steamWasRunning = false
+function keepSteamRunning() {
+  const running = steamproc.clientRunning()
+  if (!running) {
+    log(steamWasRunning ? 'Steam stopped; starting it again in the background' : 'starting Steam in the background (for downloads)')
+    steamSpawn(['-silent'])
+  }
+  steamWasRunning = true
+}
+setTimeout(() => {
+  keepSteamRunning()
+  setInterval(keepSteamRunning, 60_000)
+}, STEAM_BACKGROUND_DELAY_MS)
+// Steam's desktop window is never wanted on the TV (it shows when Big Picture
+// closes, and sometimes on its own): keep it hidden.
+setInterval(() => steamui.hideDesktopWindow(), 3000)
 
 function startSteam(appId, label) {
-  steamApp = { appId, label, started: Date.now(), seen: false }
+  steamApp = { appId, label, started: Date.now(), seen: false, bigPicture: false }
   native = null
   setFront({ kind: 'steam', key: `steam:${appId || 'bigpicture'}`, label, appId })
+  return steamApp
+}
+
+/** Open Big Picture (if it isn't) and start the game from there. */
+async function startSteamGame(appId, s) {
+  if (!steamui.bigPictureOpen()) {
+    steamSpawn(['steam://open/bigpicture'])
+    s.bigPicture = true
+    const until = Date.now() + 60_000 // a cold start of Steam takes a while
+    while (!steamui.bigPictureOpen() && Date.now() < until) await new Promise((r) => setTimeout(r, 500))
+    await new Promise((r) => setTimeout(r, 1500)) // let it finish loading
+  }
+  if (steamApp !== s) return // gave up meanwhile
+  steamSpawn([`steam://rungameid/${appId}`])
+}
+
+function closeBigPicture() {
+  if (steamui.bigPictureOpen()) steamSpawn(['steam://close/bigpicture'])
+  // Closing it shows Steam's desktop window; hide that straight away (the 3 s
+  // check would catch it too).
+  for (const ms of [1500, 3000]) setTimeout(() => steamui.hideDesktopWindow(), ms)
 }
 
 function steamRunning(s) {
-  return s.appId ? steamproc.gamePids(s.appId).length > 0 : steamproc.clientRunning()
+  return s.appId ? steamproc.gamePids(s.appId).length > 0 : steamui.bigPictureOpen()
 }
 
 function watchSteam() {
@@ -366,8 +415,11 @@ function watchSteam() {
   }
   // The first start of a Proton game can take a couple of minutes (prefix setup).
   if (!s.seen && Date.now() - s.started < 180_000) return
+  // Steam is asking something before the game starts (in Big Picture): wait.
+  if (s.appId && !s.seen && steamui.bigPictureOpen()) return
   steamApp = null
   log(`${s.label} ${s.seen ? 'closed' : 'never started'}`)
+  if (s.appId && s.bigPicture) closeBigPicture()
   send({ type: 'steam-closed', label: s.label })
   if (front.kind === 'steam') {
     if (typing) endTyping(null)
@@ -388,13 +440,14 @@ function homeFromSteam() {
       if (front.kind === 'launcher' && !typing) raiseLauncher()
     }, ms)
   }
-  if (s) send({ type: 'app-running', label: s.label, quitLabel: s.appId ? 'Quit game' : 'Close Steam' })
+  if (s) send({ type: 'app-running', label: s.label, quitLabel: s.appId ? 'Quit game' : 'Close Big Picture' })
 }
 
 /** Back to the Steam game (or Big Picture) left running behind the launcher. */
 function resumeSteam() {
   const s = steamApp
-  if (!s || !steamRunning(s)) {
+  // (A game Steam is still asking about counts: its prompt is in Big Picture.)
+  if (!s || !(steamRunning(s) || (s.appId && steamui.bigPictureOpen()))) {
     steamApp = null
     return false
   }
@@ -408,8 +461,13 @@ function resumeSteam() {
 function quitSteam() {
   const s = steamApp
   if (!s) return false
-  if (s.appId) steamproc.quitGame(s.appId)
-  else spawn('steam', ['-shutdown'], { detached: true, stdio: 'ignore' }).unref()
+  // The game, if it's running (watchSteam then closes Big Picture); otherwise
+  // Big Picture (Steam itself keeps running in the background).
+  if (s.appId && steamproc.gamePids(s.appId).length) steamproc.quitGame(s.appId)
+  else {
+    closeBigPicture()
+    if (s.appId) s.seen = true // nothing to wait for any more
+  }
   log(`quitting ${s.label}`)
   return true
 }
@@ -813,17 +871,18 @@ async function launch(target, label) {
     }
     case 'steam':
       if (!/^\d+$/.test(String(target.appId))) throw new Error('bad Steam id')
-      // Handed to the Steam client; the game is tracked by its processes (watchSteam).
-      // -silent keeps Steam's own window hidden if this call has to start Steam.
-      spawn('steam', ['-silent', `steam://rungameid/${target.appId}`], { detached: true, stdio: 'ignore' }).unref()
-      startSteam(String(target.appId), label)
+      // Handed to the Steam client through Big Picture; the game is tracked by its
+      // processes (watchSteam).
+      startSteamGame(String(target.appId), startSteam(String(target.appId), label)).catch((e) =>
+        log(`${label}: ${e.message}`),
+      )
       return
     case 'plex':
       if (!/^\d+$/.test(String(target.ratingKey))) throw new Error('bad Plex item')
       playOnPlex(String(target.ratingKey), label) // carries on in the background
       return
     case 'steam-bigpicture':
-      spawn('steam', ['steam://open/bigpicture'], { detached: true, stdio: 'ignore' }).unref()
+      steamSpawn(['steam://open/bigpicture'])
       startSteam(null, label)
       return
     default:
