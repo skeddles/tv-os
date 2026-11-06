@@ -50,6 +50,10 @@ anything that can't be undone.
 - Steam's desktop window needs a mouse; prompts in it are invisible to the
   controller and block later game starts. The shell starts games with Big
   Picture open for this reason (shell/lib/steamui.cjs).
+- Steam runs in the background, so its "Guide button focuses Steam" setting
+  must stay off (Steam > Settings > Controller > Show Advanced Settings; saved
+  as "Controller_CheckGuideButton" "0" in localconfig.vdf). When on, the Xbox
+  button in other apps (Plex) opened Big Picture (Nov 5 2026).
 - Back up any game or Steam file before editing it, to
   `~/.local/share/tvlauncher-backups/<what>-<date>/`, and tell the owner where.
 
